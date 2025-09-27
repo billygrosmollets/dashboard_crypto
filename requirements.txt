@@ -1,0 +1,25 @@
+# ============================================================================
+# Binance Advanced Trading Platform - Requirements
+# ============================================================================
+
+# Binance API client
+python-binance==1.0.19
+
+# Cryptographie pour la sécurité (chiffrement)
+cryptography==41.0.7
+
+# HTTP requests (dépendance de python-binance)
+requests==2.31.0
+
+# WebSocket pour les données en temps réel
+websocket-client==1.6.4
+
+# Modules Python intégrés (pas besoin d'installation) :
+# - tkinter (interface graphique)
+# - json (gestion JSON)
+# - os (système d'exploitation)
+# - threading (multithreading)
+# - datetime (dates et heures)
+# - base64 (encodage)
+# - logging (logs)
+# - typing (annotations de type)
