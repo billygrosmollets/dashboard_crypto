@@ -14,6 +14,7 @@ from binance.exceptions import BinanceAPIException
 
 # Imports des modules refactorisés
 from config_converter import PortfolioConfig, CryptoConverter
+from performance_tracker import PerformanceInterface
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -380,6 +381,7 @@ class TradingApp:
         # Modules refactorisés
         self.portfolio_config = None
         self.crypto_converter = None
+        self.performance_interface = None
 
         self.setup_ui()
         self.load_config()
@@ -455,8 +457,13 @@ class TradingApp:
                 self.refresh_balances
             )
 
+            # Performance Analytics
+            self.performance_interface = PerformanceInterface(self.trader)
+            performance_frame = self.performance_interface.create_performance_ui(self.root)
+
             # Réorganiser l'ordre des frames (portfolio en bas)
             config_frame.pack_configure(before=converter_frame)
+            performance_frame.pack_configure(before=converter_frame)
 
         except Exception as e:
             logger.error(f"Erreur initialisation modules: {e}")
@@ -513,6 +520,10 @@ class TradingApp:
         # Mettre à jour le convertisseur s'il existe
         if self.crypto_converter:
             self.crypto_converter.update_owned_assets()
+
+        # Prendre snapshot de lancement si performance tracker initialisé
+        if self.performance_interface:
+            self.performance_interface.take_launch_snapshot_if_needed()
 
 
 def main():

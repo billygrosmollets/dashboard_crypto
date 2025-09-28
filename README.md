@@ -1,6 +1,6 @@
-# 🚀 Binance Advanced Trading Platform
+# 🚀 Binance Portfolio Manager
 
-Une application Python GUI complète pour le trading multi-actifs avec gestion automatique de portefeuille sur Binance.
+Une application Python GUI complète pour la gestion de portefeuille crypto avec conversion multi-actifs et analytics de performance sur Binance.
 
 ## ✨ Fonctionnalités
 
@@ -9,32 +9,36 @@ Une application Python GUI complète pour le trading multi-actifs avec gestion a
 - Support mode testnet pour tests sans risque
 - Chargement automatique des clés API
 
-### 💰 Gestion Multi-Actifs
+### 💰 Affichage Portfolio
 - Affichage de tous les actifs > 5$ USD
 - Calcul automatique des valeurs en USD
 - Pourcentage de répartition du portfolio
 - Distinction fonds libres/bloqués
+- Auto-refresh toutes les 10 secondes
 
-### ⚡ Trading Intelligent
+### 🔄 Convertisseur Crypto Universal
 - **Conversion multi-actifs** : N'importe quel actif vers un autre
 - **Routes intelligentes** :
   - Conversion directe si paire disponible
   - Conversion inverse automatique
-  - Conversion triangulaire via USDT
-- **Boutons rapides** : 25%, 50%, 75%, 100%
+  - Conversion triangulaire via USDT, BUSD, BTC
+- **Interface intuitive** : ComboBox "De" avec actifs possédés seulement
+- **Calcul des frais** : Affichage détaillé des frais de conversion
 
-### 📊 Gestion de Portfolio Automatique
+### ⚖️ Rééquilibrage Portfolio
 - **Répartition personnalisée** : % BTC, % USDC, % Altcoins
-- **Profils de risque** :
-  - 🛡️ **Conservateur** : 15% BTC, 60% USDC, 25% Altcoins
-  - ⚖️ **Modéré** : 25% BTC, 40% USDC, 35% Altcoins
-  - 🚀 **Agressif** : 30% BTC, 20% USDC, 50% Altcoins
-- **Simulation** avant exécution
-- **Répartition équilibrée** automatique des altcoins
+- **Rééquilibrage intelligent** :
+  - Calcul automatique des actions nécessaires
+  - Évite les conversions inutiles entre stablecoins
+  - Répartition équilibrée automatique des altcoins
+- **Suivi des frais** : Calcul et affichage des coûts de rééquilibrage
 
-### 📋 Historique Complet
-- Transactions multi-paires
-- Détails : date, type, quantité, prix, commissions
+### 📊 Performance Analytics (TWR)
+- **Time-Weighted Return** : Performance pure indépendante du timing
+- **Snapshots automatiques** : Sauvegarde périodique du portfolio
+- **Benchmarking** : Comparaison vs BTC et ETH
+- **Alpha** : Mesure de l'outperformance
+- **Base de données SQLite** : Historique complet des performances
 
 ## 🚦 Installation Rapide
 
@@ -59,10 +63,10 @@ pip install -r requirements.txt
 
 ### 3. Configuration
 ```bash
-# Éditer le fichier .env
+# Créer et éditer le fichier .env
 BINANCE_API_KEY=votre_cle_api_ici
 BINANCE_API_SECRET=votre_secret_ici
-BINANCE_TESTNET=true
+BINANCE_TESTNET=true  # false pour trading réel
 ```
 
 ### 4. Lancement
@@ -77,31 +81,42 @@ python main.py
 2. **Activez testnet** pour commencer (`BINANCE_TESTNET=true`)
 3. **Lancez l'app** et testez la connexion
 
-### Trading de Base
-1. **Onglet Balances** → Voir votre portfolio
-2. **Onglet Trading** → Convertir vos actifs
-3. Sélectionner actif source/destination
-4. Choisir montant ou utiliser les %
-5. Confirmer la conversion
+### Sections Principales
 
-### Gestion de Portfolio
-1. **Onglet Portfolio** → Définir vos objectifs
-2. **Choisir un profil** ou personnaliser les %
-3. **"Calculer"** → Voir la répartition actuelle vs cible
-4. **"Simuler"** → Prévisualiser les actions nécessaires
-5. **Analyser** le plan avant exécution
+#### 📊 Performance Analytics
+- **Tracking automatique** : Snapshots périodiques du portfolio
+- **Métriques disponibles** : TWR 7j, 30j, 90j selon l'historique
+- **Benchmarking** : Comparaison avec BTC et ETH (30j minimum)
+- **Base de données** : Stockage local des données (performance.db)
+
+#### ⚖️ Configuration Portfolio
+- **Allocation personnalisée** : Définir % BTC, USDC, Altcoins
+- **Rééquilibrage en un clic** : Actions automatiques calculées
+- **Évitement des frais** : Pas de conversion entre stablecoins
+- **Suivi des coûts** : Affichage détaillé des frais de rééquilibrage
+
+#### 🔄 Convertisseur Crypto
+- **Interface simplifiée** : Seulement vos actifs possédés en source
+- **Conversion intelligente** : Routes optimales automatiques
+- **Calcul de frais** : Estimation avant exécution
+- **Support triangulaire** : Via USDT/BUSD/BTC si nécessaire
+
+#### 💰 Portfolio
+- **Vue d'ensemble** : Tous vos actifs avec valeurs USD
+- **Auto-refresh** : Mise à jour toutes les 10 secondes
+- **Tri par valeur** : Actifs les plus importants en premier
 
 ### Exemple de Rééquilibrage
 
 **Situation :**
 - Portfolio : $10,000
 - Actuel : 10% BTC, 50% USDC, 40% ETH
-- Objectif "Modéré" : 25% BTC, 40% USDC, 35% altcoins
+- Objectif : 25% BTC, 40% USDC, 35% altcoins
 
 **Actions automatiques :**
 - Acheter $1,500 de BTC (10% → 25%)
 - Vendre $1,000 de USDC (50% → 40%)
-- Vendre $500 d'ETH (répartition équilibrée altcoins)
+- Conserver ETH dans la répartition altcoins
 
 ## 🔒 Sécurité
 
@@ -121,27 +136,41 @@ python main.py
 
 ```
 btc-usdc-converter/
-├── main.py           # Application complète (GUI + logique)
-├── .env              # Configuration API (à éditer)
-├── requirements.txt  # Dépendances Python
-├── README.md         # Documentation
-└── .gitignore        # Fichiers à ignorer
+├── main.py                 # Application principale + interface GUI
+├── config_converter.py     # Configuration portfolio + convertisseur
+├── performance_tracker.py  # Analytics TWR + base de données
+├── .env                   # Configuration API (à créer)
+├── requirements.txt       # Dépendances Python
+├── README.md             # Documentation
+├── .gitignore           # Fichiers à ignorer
+└── performance.db       # Base de données SQLite (créée auto)
 ```
 
-## 🔧 Développement
+## 🔧 Architecture
 
-### Architecture
-- **EnvLoader** : Chargement des variables d'environnement
-- **BinanceTrader** : API Binance + conversions intelligentes
-- **PortfolioManager** : Logique de rééquilibrage
-- **AdvancedTradingApp** : Interface GUI avec onglets
+### Modules Principaux
+- **main.py** :
+  - `TradingApp` : Interface GUI principale
+  - `BinanceTrader` : API Binance + conversions intelligentes
+  - `PortfolioManager` : Logique de rééquilibrage
+  - `EnvLoader` : Chargement sécurisé des variables
 
-### Fonctionnalités Avancées
-- **Conversion triangulaire** automatique via USDT
-- **Calcul intelligent** des routes de trading
+- **config_converter.py** :
+  - `PortfolioConfig` : Interface de configuration et rééquilibrage
+  - `CryptoConverter` : Convertisseur crypto universal
+
+- **performance_tracker.py** :
+  - `PerformanceTracker` : Calculs TWR et métriques
+  - `PerformanceDatabase` : Gestion SQLite
+  - `PerformanceInterface` : Interface utilisateur analytics
+
+### Fonctionnalités Techniques
+- **Conversion triangulaire** automatique via USDT/BUSD/BTC
+- **Calcul intelligent** des routes de trading optimales
 - **Formatage précis** des quantités selon Binance
-- **Gestion d'erreurs** robuste
-- **Threading** pour UI réactive
+- **Threading** pour interface réactive
+- **Base de données SQLite** pour historique performances
+- **Gestion d'erreurs** robuste avec logging
 
 ## 🐛 Dépannage
 

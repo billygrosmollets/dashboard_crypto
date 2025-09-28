@@ -1,25 +1,27 @@
 # ============================================================================
-# Binance Advanced Trading Platform - Requirements
+# Binance Portfolio Manager - Requirements
 # ============================================================================
 
-# Binance API client
+# Binance API client pour trading et données de marché
 python-binance==1.0.19
 
-# Cryptographie pour la sécurité (chiffrement)
+# Cryptographie pour la sécurité des communications
 cryptography==41.0.7
 
 # HTTP requests (dépendance de python-binance)
 requests==2.31.0
 
-# WebSocket pour les données en temps réel
+# WebSocket pour les données en temps réel (optionnel)
 websocket-client==1.6.4
 
-# Modules Python intégrés (pas besoin d'installation) :
+# ============================================================================
+# Modules Python intégrés utilisés (pas besoin d'installation) :
+# ============================================================================
 # - tkinter (interface graphique)
-# - json (gestion JSON)
-# - os (système d'exploitation)
-# - threading (multithreading)
-# - datetime (dates et heures)
-# - base64 (encodage)
-# - logging (logs)
-# - typing (annotations de type)
+# - sqlite3 (base de données SQLite pour performance tracking)
+# - json (gestion JSON pour configuration et sérialisation)
+# - os (système d'exploitation pour variables environnement)
+# - threading (multithreading pour interface réactive)
+# - datetime (dates et heures pour calculs de performance)
+# - logging (système de logs pour debugging)
+# - time (délais entre opérations)
