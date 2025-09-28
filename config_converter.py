@@ -16,74 +16,239 @@ class PortfolioConfig:
     def __init__(self, trader, portfolio_manager):
         self.trader = trader
         self.portfolio_manager = portfolio_manager
-        self.portfolio_config = {'btc_percent': 20, 'usdc_percent': 40, 'altcoin_percent': 40}
+        # Configuration par token - sera mise à jour dynamiquement
+        self.token_allocations = {}
+        self.allocation_entries = {}  # Stockage des widgets d'entrée
 
-    def create_config_ui(self, parent, callback_refresh_balances):
-        """Crée l'interface de configuration du portfolio"""
-        config_frame = ttk.LabelFrame(parent, text="Configuration Portfolio", padding="10")
-        config_frame.pack(fill=tk.X, padx=10, pady=5)
+    def create_config_ui(self, parent, callback_refresh_balances, callback_add_fee=None):
+        """Crée l'interface de configuration du portfolio par token"""
+        self.callback_refresh_balances = callback_refresh_balances
+        self.callback_add_fee = callback_add_fee
 
-        ttk.Label(config_frame, text="BTC %:").grid(row=0, column=0, padx=5)
-        self.btc_var = tk.StringVar(value="20")
-        ttk.Entry(config_frame, textvariable=self.btc_var, width=8).grid(row=0, column=1, padx=5)
+        config_frame = ttk.LabelFrame(parent, text="⚖️ Rééquilibrage par Token", padding="10")
+        config_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        ttk.Label(config_frame, text="USDC %:").grid(row=0, column=2, padx=5)
-        self.usdc_var = tk.StringVar(value="40")
-        ttk.Entry(config_frame, textvariable=self.usdc_var, width=8).grid(row=0, column=3, padx=5)
+        # Section header avec boutons
+        header_frame = ttk.Frame(config_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(config_frame, text="Altcoins %:").grid(row=0, column=4, padx=5)
-        self.alt_var = tk.StringVar(value="40")
-        ttk.Entry(config_frame, textvariable=self.alt_var, width=8).grid(row=0, column=5, padx=5)
+        ttk.Label(header_frame, text="Allocation du Portfolio par Token",
+                 font=("Arial", 12, "bold")).pack(side=tk.LEFT)
 
-        ttk.Button(config_frame, text="⚡ Rééquilibrer",
-                  command=lambda: self.execute_rebalancing(callback_refresh_balances)).grid(row=0, column=6, padx=20)
+        ttk.Button(header_frame, text="⚡ Rééquilibrer",
+                  command=self.execute_rebalancing).pack(side=tk.RIGHT)
+
+        # Zone scrollable pour les tokens
+        canvas = tk.Canvas(config_frame, height=300)
+        scrollbar = ttk.Scrollbar(config_frame, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Info total en bas
+        self.total_allocation_var = tk.StringVar(value="Total: 0%")
+        ttk.Label(config_frame, textvariable=self.total_allocation_var,
+                 font=("Arial", 11, "bold"), foreground="blue").pack(pady=5)
+
+        # Initialiser avec les tokens du portfolio
+        self.refresh_tokens()
 
         return config_frame
 
-    def execute_rebalancing(self, callback_refresh_balances=None):
-        """Exécute le rééquilibrage du portfolio"""
+    def refresh_tokens(self):
+        """Actualise la liste des tokens avec leurs allocations"""
+        try:
+            # Récupérer les balances actuelles
+            balances = self.trader.get_all_balances_usd(5.0)  # Min 5$ pour éviter la poussière
+
+            # Vider la frame scrollable
+            for widget in self.scrollable_frame.winfo_children():
+                widget.destroy()
+
+            self.allocation_entries.clear()
+
+            # Créer l'en-tête simplifié
+            ttk.Label(self.scrollable_frame, text="Token", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=20, pady=5, sticky="w")
+            ttk.Label(self.scrollable_frame, text="% Target", font=("Arial", 10, "bold")).grid(row=0, column=1, padx=20, pady=5)
+
+            total_value = sum(data['usd_value'] for data in balances.values())
+
+            if total_value == 0:
+                ttk.Label(self.scrollable_frame, text="Aucun token trouvé",
+                         font=("Arial", 10)).grid(row=1, column=0, columnspan=2, padx=20, pady=10)
+                return
+
+            # Trier les tokens par nom pour avoir un ordre stable
+            sorted_tokens = sorted(balances.items(), key=lambda x: x[0])
+
+            row = 1
+            for token, data in sorted_tokens:
+                current_percent = (data['usd_value'] / total_value) * 100
+
+                # Nom du token
+                ttk.Label(self.scrollable_frame, text=token, font=("Arial", 10, "bold")).grid(row=row, column=0, padx=20, pady=2, sticky="w")
+
+                # % target (entrée modifiable) - on garde la valeur actuelle si déjà définie
+                if token in self.allocation_entries:
+                    # Garder la valeur existante
+                    target_var = self.allocation_entries[token]
+                else:
+                    # Nouvelle entrée avec le pourcentage actuel
+                    target_var = tk.StringVar(value=str(round(current_percent, 1)))
+                    self.allocation_entries[token] = target_var
+
+                target_entry = ttk.Entry(self.scrollable_frame, textvariable=target_var, width=10)
+                target_entry.grid(row=row, column=1, padx=20, pady=2)
+                target_entry.bind('<KeyRelease>', self.on_allocation_change)
+
+                row += 1
+
+
+            self.update_total_allocation()
+
+        except Exception as e:
+            logger.error(f"Erreur refresh tokens: {e}")
+
+    def on_allocation_change(self, event=None):
+        """Callback quand une allocation change"""
+        self.update_total_allocation()
+
+    def update_total_allocation(self):
+        """Met à jour l'affichage du total des allocations"""
+        try:
+            total = 0
+            for var in self.allocation_entries.values():
+                try:
+                    value = float(var.get())
+                    total += value
+                except ValueError:
+                    pass
+
+            # Colorier selon si c'est correct
+            if abs(total - 100) < 0.1:
+                color = "green"
+                status = "✅"
+            elif total > 100:
+                color = "red"
+                status = "⚠️"
+            else:
+                color = "orange"
+                status = "⚡"
+
+            self.total_allocation_var.set(f"{status} Total: {total:.1f}%")
+
+        except Exception as e:
+            logger.error(f"Erreur update total: {e}")
+
+
+    def execute_rebalancing(self):
+        """Exécute le rééquilibrage du portfolio basé sur les allocations par token"""
         if not self.portfolio_manager:
             messagebox.showerror("Erreur", "Portfolio manager non disponible")
             return
 
         try:
-            # Récupérer les balances actuelles
+            # Vérifier que le total fait 100%
+            total_allocation = 0
+            target_allocations = {}
+
+            for token, var in self.allocation_entries.items():
+                try:
+                    percent = float(var.get())
+                    total_allocation += percent
+                    target_allocations[token] = percent
+                except ValueError:
+                    messagebox.showerror("Erreur", f"Pourcentage invalide pour {token}")
+                    return
+
+            if abs(total_allocation - 100) > 0.1:
+                messagebox.showerror("Erreur", f"Total des allocations: {total_allocation:.1f}% (doit être 100%)")
+                return
+
+            # Actualiser les balances juste avant le rééquilibrage pour avoir les données fraîches
             all_balances = self.trader.get_all_balances_usd(5.0)
+            total_value = sum(b['usd_value'] for b in all_balances.values())
 
-            # Mettre à jour la config
-            self.portfolio_config = {
-                'btc_percent': float(self.btc_var.get()),
-                'usdc_percent': float(self.usdc_var.get()),
-                'altcoin_percent': float(self.alt_var.get())
-            }
-
-            if sum(self.portfolio_config.values()) != 100:
-                messagebox.showerror("Erreur", "La somme doit être 100%")
+            if total_value == 0:
+                messagebox.showerror("Erreur", "Portfolio vide")
                 return
 
-            plan = self.portfolio_manager.calculate_rebalancing_plan(all_balances, self.portfolio_config)
+            # Calculer le plan de rééquilibrage basé sur les tokens individuels
+            plan = self.calculate_token_rebalance_plan(all_balances, total_value, target_allocations)
 
-            if not plan.get('actions'):
-                messagebox.showinfo("Info", "✅ Portfolio déjà équilibré!")
+            if not plan['actions']:
+                messagebox.showinfo("Info", "✅ Portfolio déjà équilibré selon vos allocations !")
                 return
 
-            # Confirmation
+            # Afficher le plan
             actions_text = "\n".join([
-                f"• {a['action']} {a['asset']}: ${a['usd_amount']:.2f}"
-                for a in plan['actions'][:5]
+                f"• {action['action']} {action['asset']}: ${action['usd_amount']:.2f}"
+                for action in plan['actions'][:8]  # Limiter l'affichage
             ])
+
+            if len(plan['actions']) > 8:
+                actions_text += f"\n... et {len(plan['actions']) - 8} autres actions"
 
             if not messagebox.askyesno("Confirmation", f"Exécuter ces actions?\n\n{actions_text}"):
                 return
 
-            self._execute_plan(plan, callback_refresh_balances)
+            self._execute_plan(plan, self.callback_refresh_balances, self.callback_add_fee)
 
-        except ValueError:
-            messagebox.showerror("Erreur", "Pourcentages invalides")
         except Exception as e:
+            logger.error(f"Erreur rééquilibrage: {e}")
             messagebox.showerror("Erreur", f"Erreur: {e}")
 
-    def _execute_plan(self, plan, callback_refresh_balances=None):
+    def calculate_token_rebalance_plan(self, all_balances, total_value, target_allocations):
+        """Calcule le plan de rééquilibrage basé sur les allocations individuelles par token"""
+        plan = {'actions': [], 'current_allocation': {}, 'target_allocation': {}}
+
+        # Calculer les valeurs cibles
+        target_values = {}
+        for token, percent in target_allocations.items():
+            target_values[token] = (percent / 100) * total_value
+
+        # Analyser chaque token
+        for token, target_value in target_values.items():
+            current_value = all_balances.get(token, {'usd_value': 0})['usd_value']
+            difference = target_value - current_value
+
+            # Seuil minimum pour éviter les micro-ajustements
+            if abs(difference) > total_value * 0.005:  # 0.5% du portfolio total
+                if difference > 0:
+                    # Besoin d'acheter ce token
+                    plan['actions'].append({
+                        'asset': token,
+                        'action': 'ACHETER',
+                        'usd_amount': difference,
+                        'priority': 1
+                    })
+                else:
+                    # Besoin de vendre ce token
+                    plan['actions'].append({
+                        'asset': token,
+                        'action': 'VENDRE',
+                        'usd_amount': abs(difference),
+                        'priority': 1
+                    })
+
+            plan['current_allocation'][token] = current_value
+            plan['target_allocation'][token] = target_value
+
+        # Trier par importance (montant décroissant)
+        plan['actions'].sort(key=lambda x: x['usd_amount'], reverse=True)
+
+        return plan
+
+    def _execute_plan(self, plan, callback_refresh_balances=None, callback_add_fee=None):
         """Exécute le plan de rééquilibrage"""
         def execute():
             success, failed = 0, 0
@@ -95,9 +260,6 @@ class PortfolioConfig:
             for action in plan['actions']:
                 asset, action_type, usd_amount = action['asset'], action['action'], action['usd_amount']
 
-                # Ignorer actions incohérentes et petits montants
-                if usd_amount < 10:
-                    continue
 
                 # Éviter les conversions inutiles entre stablecoins
                 stablecoins = {'USDC', 'USDT', 'BUSD', 'FDUSD'}
@@ -144,14 +306,19 @@ class PortfolioConfig:
             if callback_refresh_balances:
                 callback_refresh_balances()
 
-            # Préparer le message avec les frais
-            fees_details = ""
-            if detailed_fees:
-                fees_list = [f"{amount:.6f} {asset}" for asset, amount in detailed_fees.items()]
-                fees_details = f"\n\n💸 Frais totaux du rééquilibrage:\n{', '.join(fees_list)}\n≈ ${total_rebalancing_fees_usdt:.4f}"
+            # Créer un résumé détaillé avec les frais
+            volume_total = sum(action['usd_amount'] for action in plan['actions'])
 
-            msg = f"✅ Rééquilibrage terminé!\n\nRéussies: {success}\nÉchouées: {failed}{fees_details}"
-            messagebox.showinfo("Résultat", msg)
+            msg = f"✅ Rééquilibrage terminé!\n\n"
+            msg += f"📊 Actions: {success} réussies, {failed} échouées\n"
+            msg += f"💰 Volume total: ${volume_total:.2f}\n"
+            msg += f"💸 Frais totaux: ${total_rebalancing_fees_usdt:.4f}"
+
+            if total_rebalancing_fees_usdt > 0 and volume_total > 0:
+                fee_percentage = (total_rebalancing_fees_usdt / volume_total) * 100
+                msg += f" ({fee_percentage:.3f}%)"
+
+            messagebox.showinfo("Résumé Rééquilibrage", msg)
 
             # Logger les frais pour référence
             if total_rebalancing_fees_usdt > 0:
@@ -167,13 +334,13 @@ class CryptoConverter:
         self.trader = trader
         self.conversion_rate_var = tk.StringVar(value="Taux: --")
         self.conversion_result_var = tk.StringVar(value="")
-        self.conversion_fees_var = tk.StringVar(value="")
         self.available_balance_var = tk.StringVar(value="")
 
-    def create_converter_ui(self, parent, all_balances_ref, update_owned_assets_callback):
+    def create_converter_ui(self, parent, all_balances_ref, update_owned_assets_callback, callback_add_fee=None):
         """Crée l'interface du convertisseur crypto"""
         self.all_balances_ref = all_balances_ref
         self.update_owned_assets_callback = update_owned_assets_callback
+        self.callback_add_fee = callback_add_fee
 
         conversion_frame = ttk.LabelFrame(parent, text="🔄 Convertisseur Crypto Universal", padding="10")
         conversion_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -217,10 +384,6 @@ class CryptoConverter:
         ttk.Button(action_frame, text="💱 Inverser", command=self.swap_assets).pack(side=tk.LEFT, padx=5)
         ttk.Label(action_frame, textvariable=self.conversion_result_var, font=("Arial", 10)).pack(side=tk.LEFT, padx=(20, 5))
 
-        # Quatrième ligne: affichage des frais
-        fees_frame = ttk.Frame(conversion_frame)
-        fees_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(fees_frame, textvariable=self.conversion_fees_var, font=("Arial", 9), foreground="orange").pack(side=tk.LEFT, padx=5)
 
         # Initialiser les comboboxes
         self.populate_asset_combos()
@@ -387,36 +550,21 @@ class CryptoConverter:
                         else:
                             self.conversion_result_var.set("✅ Conversion réussie")
 
-                        # Afficher les frais
+                        # Ajouter les frais à l'historique
                         total_fee_usdt = result.get('total_fee_usdt', 0)
-                        if total_fee_usdt > 0:
-                            if result.get('type') == 'triangular':
-                                # Pour les conversions triangulaires, afficher plus de détails
-                                combined_fees = result.get('combined_fees', {})
-                                fees_text = ", ".join([f"{amount:.6f} {asset}" for asset, amount in combined_fees.items()])
-                                self.conversion_fees_var.set(f"💸 Frais: {fees_text} (≈ ${total_fee_usdt:.4f})")
-                            else:
-                                # Pour les conversions directes
-                                fees = result.get('fees', {}).get('total_fees', {})
-                                if fees:
-                                    fees_text = ", ".join([f"{amount:.6f} {asset}" for asset, amount in fees.items()])
-                                    self.conversion_fees_var.set(f"💸 Frais: {fees_text} (≈ ${total_fee_usdt:.4f})")
-                                else:
-                                    self.conversion_fees_var.set(f"💸 Frais: ≈ ${total_fee_usdt:.4f}")
-                        else:
-                            self.conversion_fees_var.set("💸 Frais: Calcul en cours...")
+                        if total_fee_usdt > 0 and self.callback_add_fee:
+                            conversion_amount = float(self.amount_var.get()) if self.amount_var.get() else 0
+                            self.callback_add_fee(f"Conversion {from_asset}→{to_asset}", conversion_amount, total_fee_usdt)
 
                         # Actualiser les balances
                         if self.update_owned_assets_callback:
                             self.update_owned_assets_callback()
                     else:
                         self.conversion_result_var.set("❌ Échec de la conversion")
-                        self.conversion_fees_var.set("")
 
                 except Exception as e:
                     logger.error(f"Erreur conversion: {e}")
                     self.conversion_result_var.set(f"❌ Erreur: {e}")
-                    self.conversion_fees_var.set("")
 
             threading.Thread(target=do_conversion, daemon=True).start()
             self.conversion_result_var.set("⏳ Conversion en cours...")

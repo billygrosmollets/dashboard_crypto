@@ -13,7 +13,7 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException
 
 # Imports des modules refactorisés
-from config_converter import PortfolioConfig, CryptoConverter
+from config_converter import PortfolioConfig
 from performance_tracker import PerformanceInterface
 
 logging.basicConfig(level=logging.INFO)
@@ -392,19 +392,38 @@ class TradingApp:
         header = ttk.Frame(self.root)
         header.pack(fill=tk.X, padx=10, pady=5)
 
-        ttk.Label(header, text="🚀 Binance Portfolio", font=("Arial", 16, "bold")).pack(side=tk.LEFT)
+        ttk.Label(header, text="🚀 Binance Portfolio Manager", font=("Arial", 16, "bold")).pack(side=tk.LEFT)
         self.status_var = tk.StringVar(value="❌ Déconnecté")
         ttk.Label(header, textvariable=self.status_var, font=("Arial", 12)).pack(side=tk.RIGHT)
 
-        # Les interfaces seront créées lors de l'initialisation des modules
-        # Placeholder pour les sections qui seront ajoutées dynamiquement
+        # Système d'onglets
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Section Portfolio principale (toujours présente)
+        # Créer les tabs
+        self.create_tabs()
+
+    def create_tabs(self):
+        """Crée les onglets de l'interface"""
+        # Tab 1: Portfolio
+        self.portfolio_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.portfolio_tab, text="📊 Portfolio")
+
+        # Tab 2: Outils (Converter)
+        self.tools_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.tools_tab, text="🔧 Outils")
+
+        # Tab 3: TWR Analytics
+        self.twr_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.twr_tab, text="📈 TWR Analytics")
+
+        # Créer le contenu du tab Portfolio
         self.create_portfolio_ui()
 
     def create_portfolio_ui(self):
-        """Crée l'interface principale du portfolio"""
-        balance_frame = ttk.LabelFrame(self.root, text="Portfolio", padding="10")
+        """Crée l'interface principale du portfolio dans son tab"""
+        # Section Portfolio dans son tab
+        balance_frame = ttk.LabelFrame(self.portfolio_tab, text="Portfolio Holdings", padding="10")
         balance_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.total_var = tk.StringVar(value="Total: $0.00")
@@ -440,34 +459,43 @@ class TradingApp:
                 messagebox.showerror("Erreur", f"Erreur de configuration: {e}")
 
     def init_modules(self):
-        """Initialise les modules refactorisés et crée leurs interfaces"""
+        """Initialise les modules refactorisés et crée leurs interfaces dans les tabs"""
         if not self.trader:
             return
 
         try:
-            # Portfolio Configuration
+            # Portfolio Configuration (dans le tab Outils)
             self.portfolio_config = PortfolioConfig(self.trader, self.portfolio_manager)
-            config_frame = self.portfolio_config.create_config_ui(self.root, self.refresh_balances)
-
-            # Crypto Converter
-            self.crypto_converter = CryptoConverter(self.trader)
-            converter_frame = self.crypto_converter.create_converter_ui(
-                self.root,
-                lambda: self.all_balances,
-                self.refresh_balances
+            config_frame = self.portfolio_config.create_config_ui(
+                self.tools_tab,
+                self.refresh_balances,
+                None  # Plus besoin du callback de frais
             )
 
-            # Performance Analytics
-            self.performance_interface = PerformanceInterface(self.trader)
-            performance_frame = self.performance_interface.create_performance_ui(self.root)
 
-            # Réorganiser l'ordre des frames (portfolio en bas)
-            config_frame.pack_configure(before=converter_frame)
-            performance_frame.pack_configure(before=converter_frame)
+            # Performance Analytics (uniquement dans le tab TWR Analytics)
+            self.performance_interface = PerformanceInterface(self.trader)
+
+            # Créer le contenu du tab TWR Analytics avec boutons intégrés
+            self.create_twr_tab_content()
 
         except Exception as e:
             logger.error(f"Erreur initialisation modules: {e}")
             messagebox.showerror("Erreur", f"Erreur initialisation: {e}")
+
+    def create_twr_tab_content(self):
+        """Crée le contenu du tab TWR Analytics"""
+        if not self.performance_interface:
+            return
+
+        # Créer une version intégrée de TWRAnalyticsWindow dans le tab
+        self.twr_analytics = TWRAnalyticsTab(self.twr_tab, self.performance_interface.tracker)
+
+
+    def refresh_twr_if_needed(self):
+        """Actualise le TWR si le tab est initialisé"""
+        if hasattr(self, 'twr_analytics'):
+            self.twr_analytics.refresh_all_data()
 
 
     def test_connection(self):
@@ -517,13 +545,348 @@ class TradingApp:
                 f"{percent:.2f}%"
             ))
 
-        # Mettre à jour le convertisseur s'il existe
-        if self.crypto_converter:
-            self.crypto_converter.update_owned_assets()
 
-        # Prendre snapshot de lancement si performance tracker initialisé
+        # Gérer les snapshots si performance tracker initialisé
         if self.performance_interface:
-            self.performance_interface.take_launch_snapshot_if_needed()
+            # Si c'est le premier rafraîchissement, prendre snapshot après données chargées
+            if not self.performance_interface.first_refresh_done:
+                logger.info("📊 Premier rafraîchissement terminé - vérification snapshot...")
+                self.performance_interface.first_refresh_done = True
+                self.performance_interface.check_and_take_snapshot_after_refresh()
+
+            # Actualiser automatiquement le TWR dans son tab
+            self.refresh_twr_if_needed()
+
+
+
+class TWRAnalyticsTab:
+    """Version intégrée de TWRAnalyticsWindow pour le système d'onglets"""
+
+    def __init__(self, parent_tab, tracker):
+        self.parent = parent_tab
+        self.tracker = tracker
+
+        # Variables d'affichage pour toutes les périodes
+        self.twr_7d = tk.StringVar(value="Calcul...")
+        self.twr_14d = tk.StringVar(value="Calcul...")
+        self.twr_30d = tk.StringVar(value="Calcul...")
+        self.twr_60d = tk.StringVar(value="Calcul...")
+        self.twr_90d = tk.StringVar(value="Calcul...")
+        self.twr_180d = tk.StringVar(value="Calcul...")
+        self.twr_360d = tk.StringVar(value="Calcul...")
+        self.twr_720d = tk.StringVar(value="Calcul...")
+        self.twr_total = tk.StringVar(value="Calcul...")
+
+        self.annualized_7d = tk.StringVar(value="--")
+        self.annualized_14d = tk.StringVar(value="--")
+        self.annualized_30d = tk.StringVar(value="--")
+        self.annualized_60d = tk.StringVar(value="--")
+        self.annualized_90d = tk.StringVar(value="--")
+        self.annualized_180d = tk.StringVar(value="--")
+        self.annualized_360d = tk.StringVar(value="--")
+        self.annualized_720d = tk.StringVar(value="--")
+        # Pas d'annualisation pour total et périodes > 365j
+
+        self.cash_flow_info = tk.StringVar(value="Chargement cash flows...")
+        self.snapshot_info = tk.StringVar(value="Chargement snapshots...")
+
+        self.create_ui()
+        self.refresh_all_data()
+
+    def create_ui(self):
+        """Crée l'interface dans le tab"""
+        main_frame = ttk.Frame(self.parent, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Titre
+        title_label = ttk.Label(main_frame, text="📊 Time-Weighted Return Analytics",
+                               font=("Arial", 16, "bold"))
+        title_label.pack(pady=(0, 20))
+
+        # Section TWR
+        twr_frame = ttk.LabelFrame(main_frame, text="📈 TWR par période", padding="10")
+        twr_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Headers
+        headers_frame = ttk.Frame(twr_frame)
+        headers_frame.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(headers_frame, text="Période", font=("Arial", 10, "bold"), width=12).pack(side=tk.LEFT)
+        ttk.Label(headers_frame, text="TWR", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT)
+        ttk.Label(headers_frame, text="Annualisé", font=("Arial", 10, "bold"), width=15).pack(side=tk.LEFT)
+
+        # Créer toutes les lignes de périodes
+        periods_data = [
+            ("7 jours", self.twr_7d, self.annualized_7d),
+            ("14 jours", self.twr_14d, self.annualized_14d),
+            ("30 jours", self.twr_30d, self.annualized_30d),
+            ("60 jours", self.twr_60d, self.annualized_60d),
+            ("90 jours", self.twr_90d, self.annualized_90d),
+            ("180 jours", self.twr_180d, self.annualized_180d),
+            ("360 jours", self.twr_360d, self.annualized_360d),
+            ("720 jours", self.twr_720d, self.annualized_720d),
+            ("Total", self.twr_total, None)  # Pas d'annualisation pour total
+        ]
+
+        for period_name, twr_var, ann_var in periods_data:
+            row = ttk.Frame(twr_frame)
+            row.pack(fill=tk.X, pady=1)
+            ttk.Label(row, text=period_name, width=12).pack(side=tk.LEFT)
+            ttk.Label(row, textvariable=twr_var, width=15, font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+
+            if ann_var:
+                ttk.Label(row, textvariable=ann_var, width=15).pack(side=tk.LEFT)
+            else:
+                ttk.Label(row, text="--", width=15).pack(side=tk.LEFT)
+
+
+        # Section Données
+        data_frame = ttk.LabelFrame(main_frame, text="📋 Données de base", padding="10")
+        data_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(data_frame, textvariable=self.snapshot_info,
+                 font=("Arial", 9)).pack(anchor=tk.W, pady=2)
+        ttk.Label(data_frame, textvariable=self.cash_flow_info,
+                 font=("Arial", 9)).pack(anchor=tk.W, pady=2)
+
+
+        # Boutons
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill=tk.X, pady=(10, 0))
+
+        ttk.Button(buttons_frame, text="🔄 Actualiser",
+                  command=self.refresh_all_data).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttons_frame, text="➕ Ajouter snapshot",
+                  command=self.add_manual_snapshot).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttons_frame, text="💰 Ajouter cash flow",
+                  command=self.add_manual_cash_flow).pack(side=tk.LEFT, padx=5)
+        ttk.Button(buttons_frame, text="📤 Exporter",
+                  command=self.export_data).pack(side=tk.LEFT, padx=5)
+
+    def generate_test_data(self):
+        """Génère des données de test"""
+        def generate():
+            try:
+                success = self.tracker.generate_fake_data_for_testing()
+                if success:
+                    messagebox.showinfo("Succès", "Données de test générées!\nVous pouvez maintenant tester le TWR.")
+                    # Actualiser les métriques après génération
+                    self.refresh_all_data()
+                else:
+                    messagebox.showerror("Erreur", "Échec de génération des données de test")
+            except Exception as e:
+                messagebox.showerror("Erreur", f"Erreur génération: {e}")
+
+        threading.Thread(target=generate, daemon=True).start()
+
+    def refresh_all_data(self):
+        """Actualise toutes les données du tab"""
+        def calculate():
+            try:
+                # Stats générales
+                stats = self.tracker.get_tracking_stats()
+                days_available = stats['days']
+
+                # Snapshots info
+                snapshots = self.tracker.db.get_snapshots()
+                self.snapshot_info.set(f"📸 {len(snapshots)} snapshots depuis {days_available} jours")
+
+                # Cash flows info
+                cash_flows = self.tracker.db.get_cash_flows()
+                total_deposits = sum(cf['amount'] for cf in cash_flows if cf['amount'] > 0)
+                total_withdraws = sum(abs(cf['amount']) for cf in cash_flows if cf['amount'] < 0)
+                self.cash_flow_info.set(f"💰 {len(cash_flows)} cash flows: +${total_deposits:.0f} / -${total_withdraws:.0f}")
+
+                # Calculer TWR pour toutes les périodes
+                periods = [7, 14, 30, 60, 90, 180, 360, 720]
+                twr_vars = [
+                    self.twr_7d, self.twr_14d, self.twr_30d, self.twr_60d,
+                    self.twr_90d, self.twr_180d, self.twr_360d, self.twr_720d
+                ]
+                ann_vars = [
+                    self.annualized_7d, self.annualized_14d, self.annualized_30d, self.annualized_60d,
+                    self.annualized_90d, self.annualized_180d, self.annualized_360d, self.annualized_720d
+                ]
+
+                for i, days in enumerate(periods):
+                    if days_available >= days:
+                        metrics = self.tracker.calculate_performance_metrics(days)
+
+                        if metrics and metrics['twr'] is not None:
+                            twr = metrics['twr'] * 100
+                            emoji = "📈" if twr > 0 else "📉" if twr < 0 else "➡️"
+                            twr_vars[i].set(f"{emoji} {twr:+.2f}%")
+
+                            # Annualisation seulement si <= 365 jours
+                            if days <= 365 and metrics['twr_annualized'] is not None:
+                                ann_twr = metrics['twr_annualized'] * 100
+                                ann_vars[i].set(f"{ann_twr:+.1f}%")
+                            else:
+                                ann_vars[i].set("--")
+                        else:
+                            twr_vars[i].set("❌ N/A")
+                            ann_vars[i].set("--")
+                    else:
+                        twr_vars[i].set(f"⏳ {days - days_available}j restants")
+                        ann_vars[i].set("--")
+
+                # Calculer TWR total (toute la période disponible)
+                if days_available > 0:
+                    total_metrics = self.tracker.calculate_performance_metrics(days_available)
+                    if total_metrics and total_metrics['twr'] is not None:
+                        total_twr = total_metrics['twr'] * 100
+                        emoji = "📈" if total_twr > 0 else "📉" if total_twr < 0 else "➡️"
+                        self.twr_total.set(f"{emoji} {total_twr:+.2f}% ({days_available}j)")
+                    else:
+                        self.twr_total.set("❌ N/A")
+                else:
+                    self.twr_total.set("⏳ Pas de données")
+
+            except Exception as e:
+                logger.error(f"Erreur refresh TWR tab: {e}")
+
+        threading.Thread(target=calculate, daemon=True).start()
+
+    def add_manual_snapshot(self):
+        """Interface pour ajouter manuellement un snapshot"""
+        # Créer une fenêtre de saisie
+        snapshot_window = tk.Toplevel()
+        snapshot_window.title("➕ Ajouter Snapshot Manuel")
+        snapshot_window.geometry("400x300")
+
+        ttk.Label(snapshot_window, text="Ajouter un snapshot du portfolio", font=("Arial", 12, "bold")).pack(pady=10)
+
+        # Obtenir le portfolio actuel pour pré-remplir
+        try:
+            balances = self.tracker.trader.get_all_balances_usd(1.0)
+            total_value = sum(b['usd_value'] for b in balances.values())
+
+            # Formulaire
+            ttk.Label(snapshot_window, text=f"Valeur totale actuelle: ${total_value:.2f}").pack(pady=5)
+
+            ttk.Label(snapshot_window, text="Confirmer l'ajout de ce snapshot?").pack(pady=10)
+
+            def save_snapshot():
+                try:
+                    # Simplifier la composition
+                    composition = {}
+                    for asset, data in balances.items():
+                        if data['usd_value'] > 1.0:
+                            composition[asset] = {
+                                'balance': data['balance'],
+                                'usd_value': data['usd_value'],
+                                'percentage': (data['usd_value'] / total_value * 100) if total_value > 0 else 0
+                            }
+
+                    self.tracker.db.add_snapshot_manually(datetime.now(), total_value, composition)
+                    messagebox.showinfo("Succès", "Snapshot ajouté avec succès!")
+                    snapshot_window.destroy()
+                    self.refresh_all_data()
+                except Exception as e:
+                    messagebox.showerror("Erreur", f"Erreur ajout snapshot: {e}")
+
+            ttk.Button(snapshot_window, text="✅ Confirmer", command=save_snapshot).pack(pady=10)
+            ttk.Button(snapshot_window, text="❌ Annuler", command=snapshot_window.destroy).pack(pady=5)
+
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Impossible d'obtenir le portfolio: {e}")
+            snapshot_window.destroy()
+
+    def add_manual_cash_flow(self):
+        """Interface pour ajouter manuellement un cash flow"""
+        # Créer une fenêtre de saisie
+        cash_flow_window = tk.Toplevel()
+        cash_flow_window.title("💰 Ajouter Cash Flow Manuel")
+        cash_flow_window.geometry("400x350")
+
+        ttk.Label(cash_flow_window, text="Ajouter un cash flow (dépôt/retrait)", font=("Arial", 12, "bold")).pack(pady=10)
+
+        # Formulaire
+        form_frame = ttk.Frame(cash_flow_window)
+        form_frame.pack(pady=10, padx=20, fill=tk.X)
+
+        # Type de cash flow
+        ttk.Label(form_frame, text="Type d'opération:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        type_var = tk.StringVar(value="DEPOSIT")
+        type_combo = ttk.Combobox(form_frame, textvariable=type_var, values=["DEPOSIT", "WITHDRAW"], state="readonly", width=15)
+        type_combo.grid(row=0, column=1, sticky=tk.W, pady=5)
+
+        # Montant
+        ttk.Label(form_frame, text="Montant (EUR):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        amount_var = tk.StringVar()
+        amount_entry = ttk.Entry(form_frame, textvariable=amount_var, width=18)
+        amount_entry.grid(row=1, column=1, sticky=tk.W, pady=5)
+
+        # Date et heure (par défaut maintenant)
+        ttk.Label(form_frame, text="Date:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
+        date_entry = ttk.Entry(form_frame, textvariable=date_var, width=18)
+        date_entry.grid(row=2, column=1, sticky=tk.W, pady=5)
+
+        ttk.Label(form_frame, text="Heure:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        time_var = tk.StringVar(value=datetime.now().strftime("%H:%M"))
+        time_entry = ttk.Entry(form_frame, textvariable=time_var, width=18)
+        time_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+
+        # Description
+        ttk.Label(form_frame, text="Description:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        desc_var = tk.StringVar()
+        desc_entry = ttk.Entry(form_frame, textvariable=desc_var, width=18)
+        desc_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
+
+        # Instructions
+        instructions = ttk.Label(cash_flow_window,
+                                text="💡 Workflow optimal:\n1. Prendre snapshot AVANT l'opération\n2. Faire dépôt/retrait EUR↔USDC\n3. Ajouter ce cash flow\n4. Snapshots auto continuent toutes les 2h",
+                                font=("Arial", 9), foreground="gray", justify=tk.LEFT)
+        instructions.pack(pady=10)
+
+        def save_cash_flow():
+            try:
+                # Validation
+                if not amount_var.get():
+                    messagebox.showerror("Erreur", "Veuillez entrer un montant")
+                    return
+
+                amount = float(amount_var.get())
+                if amount <= 0:
+                    messagebox.showerror("Erreur", "Le montant doit être positif")
+                    return
+
+                # Construire la datetime
+                date_str = f"{date_var.get()} {time_var.get()}"
+                timestamp = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+
+                # Convertir en USD (pour withdraw, rendre négatif)
+                amount_usd = amount if type_var.get() == "DEPOSIT" else -amount
+
+                # Description par défaut
+                description = desc_var.get() or f"{type_var.get()} manuel EUR→USDC"
+
+                # Sauvegarder
+                self.tracker.db.save_cash_flow(timestamp, amount_usd, type_var.get(), description)
+
+                messagebox.showinfo("Succès", f"Cash flow ajouté: {amount_usd:+.2f}€ le {timestamp}")
+                cash_flow_window.destroy()
+                self.refresh_all_data()
+
+            except ValueError:
+                messagebox.showerror("Erreur", "Montant invalide ou format de date incorrect")
+            except Exception as e:
+                messagebox.showerror("Erreur", f"Erreur sauvegarde: {e}")
+
+        # Boutons
+        buttons_frame = ttk.Frame(cash_flow_window)
+        buttons_frame.pack(pady=20)
+
+        ttk.Button(buttons_frame, text="✅ Sauvegarder", command=save_cash_flow).pack(side=tk.LEFT, padx=10)
+        ttk.Button(buttons_frame, text="❌ Annuler", command=cash_flow_window.destroy).pack(side=tk.LEFT, padx=10)
+
+        # Focus sur le montant
+        amount_entry.focus()
+
+    def export_data(self):
+        """Exporte les données TWR"""
+        messagebox.showinfo("Export", "Fonctionnalité d'export à venir!")
 
 
 def main():

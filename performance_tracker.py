@@ -4,9 +4,7 @@ Performance Analytics - TWR (Time-Weighted Return) Tracker
 Module pour calculer et afficher les vraies performances de trading
 """
 import tkinter as tk
-from tkinter import ttk, messagebox
 import threading
-import sqlite3
 import json
 from datetime import datetime, timedelta
 import logging
@@ -14,107 +12,119 @@ import os
 
 logger = logging.getLogger(__name__)
 
-class PerformanceDatabase:
-    """Gestionnaire de base de données pour le tracking de performance"""
+class PerformanceJSONManager:
+    """Gestionnaire JSON pour le tracking de performance"""
 
-    def __init__(self, db_path="performance.db"):
-        self.db_path = db_path
-        self.init_database()
+    def __init__(self, snapshots_file="snapshots.json", cashflows_file="cashflows.json"):
+        self.snapshots_file = snapshots_file
+        self.cashflows_file = cashflows_file
+        self.ensure_files_exist()
 
-    def init_database(self):
-        """Initialise la base de données SQLite"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        total_value_usd REAL NOT NULL,
-                        composition TEXT NOT NULL,
-                        source TEXT DEFAULT 'auto'
-                    )
-                """)
 
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS cash_flows (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        amount_usd REAL NOT NULL,
-                        type TEXT NOT NULL,
-                        description TEXT,
-                        auto_detected BOOLEAN DEFAULT 1
-                    )
-                """)
+    def ensure_files_exist(self):
+        """S'assure que les fichiers JSON existent"""
+        if not os.path.exists(self.snapshots_file):
+            with open(self.snapshots_file, 'w') as f:
+                json.dump([], f)
 
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS performance_periods (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        start_date TEXT NOT NULL,
-                        end_date TEXT NOT NULL,
-                        twr REAL NOT NULL,
-                        benchmark_btc REAL,
-                        benchmark_eth REAL,
-                        alpha_btc REAL,
-                        alpha_eth REAL
-                    )
-                """)
-
-                conn.commit()
-                logger.info("Base de données performance initialisée")
-        except Exception as e:
-            logger.error(f"Erreur initialisation DB: {e}")
+        if not os.path.exists(self.cashflows_file):
+            with open(self.cashflows_file, 'w') as f:
+                json.dump([], f)
 
     def save_snapshot(self, timestamp, total_value, composition):
         """Sauvegarde un snapshot du portfolio"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT INTO portfolio_snapshots
-                    (timestamp, total_value_usd, composition)
-                    VALUES (?, ?, ?)
-                """, (timestamp.isoformat(), total_value, json.dumps(composition)))
-                conn.commit()
+            snapshots = self.load_snapshots()
+
+            # Créer le nouveau snapshot
+            new_snapshot = {
+                'timestamp': timestamp.isoformat(),
+                'total_value_usd': total_value,
+                'composition': composition
+            }
+
+            snapshots.append(new_snapshot)
+
+            # Trier par timestamp
+            snapshots.sort(key=lambda x: x['timestamp'])
+
+            # Sauvegarder
+            with open(self.snapshots_file, 'w') as f:
+                json.dump(snapshots, f, indent=2)
+
         except Exception as e:
             logger.error(f"Erreur sauvegarde snapshot: {e}")
+
+    def add_snapshot_manually(self, timestamp, total_value, composition):
+        """Ajoute manuellement un snapshot"""
+        self.save_snapshot(timestamp, total_value, composition)
+        logger.info(f"📸 Snapshot manuel ajouté: ${total_value:.2f} à {timestamp}")
+
+    def load_snapshots(self):
+        """Charge tous les snapshots depuis le fichier JSON"""
+        try:
+            with open(self.snapshots_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Erreur chargement snapshots: {e}")
+            return []
 
     def save_cash_flow(self, timestamp, amount, cf_type, description=""):
         """Sauvegarde un cash flow (dépôt/retrait)"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT INTO cash_flows
-                    (timestamp, amount_usd, type, description)
-                    VALUES (?, ?, ?, ?)
-                """, (timestamp.isoformat(), amount, cf_type, description))
-                conn.commit()
+            cash_flows = self.load_cash_flows()
+
+            # Créer le nouveau cash flow
+            new_cash_flow = {
+                'timestamp': timestamp.isoformat(),
+                'amount_usd': amount,
+                'type': cf_type,
+                'description': description
+            }
+
+            cash_flows.append(new_cash_flow)
+
+            # Trier par timestamp
+            cash_flows.sort(key=lambda x: x['timestamp'])
+
+            # Sauvegarder
+            with open(self.cashflows_file, 'w') as f:
+                json.dump(cash_flows, f, indent=2)
+
         except Exception as e:
             logger.error(f"Erreur sauvegarde cash flow: {e}")
+
+    def load_cash_flows(self):
+        """Charge tous les cash flows depuis le fichier JSON"""
+        try:
+            with open(self.cashflows_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Erreur chargement cash flows: {e}")
+            return []
 
     def get_snapshots(self, start_date=None, end_date=None):
         """Récupère les snapshots dans une période"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                query = "SELECT timestamp, total_value_usd, composition FROM portfolio_snapshots"
-                params = []
+            snapshots = self.load_snapshots()
+            result = []
 
-                if start_date or end_date:
-                    conditions = []
-                    if start_date:
-                        conditions.append("timestamp >= ?")
-                        params.append(start_date.isoformat())
-                    if end_date:
-                        conditions.append("timestamp <= ?")
-                        params.append(end_date.isoformat())
-                    query += " WHERE " + " AND ".join(conditions)
+            for snapshot in snapshots:
+                snapshot_date = datetime.fromisoformat(snapshot['timestamp'])
 
-                query += " ORDER BY timestamp"
+                # Filtrer par date si spécifié
+                if start_date and snapshot_date < start_date:
+                    continue
+                if end_date and snapshot_date > end_date:
+                    continue
 
-                cursor = conn.execute(query, params)
-                return [{
-                    'timestamp': datetime.fromisoformat(row[0]),
-                    'total_value': row[1],
-                    'composition': json.loads(row[2])
-                } for row in cursor.fetchall()]
+                result.append({
+                    'timestamp': snapshot_date,
+                    'total_value': snapshot['total_value_usd'],
+                    'composition': snapshot['composition']
+                })
+
+            return result
         except Exception as e:
             logger.error(f"Erreur récupération snapshots: {e}")
             return []
@@ -122,29 +132,26 @@ class PerformanceDatabase:
     def get_cash_flows(self, start_date=None, end_date=None):
         """Récupère les cash flows dans une période"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                query = "SELECT timestamp, amount_usd, type, description FROM cash_flows"
-                params = []
+            cash_flows = self.load_cash_flows()
+            result = []
 
-                if start_date or end_date:
-                    conditions = []
-                    if start_date:
-                        conditions.append("timestamp >= ?")
-                        params.append(start_date.isoformat())
-                    if end_date:
-                        conditions.append("timestamp <= ?")
-                        params.append(end_date.isoformat())
-                    query += " WHERE " + " AND ".join(conditions)
+            for cf in cash_flows:
+                cf_date = datetime.fromisoformat(cf['timestamp'])
 
-                query += " ORDER BY timestamp"
+                # Filtrer par date si spécifié
+                if start_date and cf_date < start_date:
+                    continue
+                if end_date and cf_date > end_date:
+                    continue
 
-                cursor = conn.execute(query, params)
-                return [{
-                    'timestamp': datetime.fromisoformat(row[0]),
-                    'amount': row[1],
-                    'type': row[2],
-                    'description': row[3]
-                } for row in cursor.fetchall()]
+                result.append({
+                    'timestamp': cf_date,
+                    'amount': cf['amount_usd'],
+                    'type': cf['type'],
+                    'description': cf['description']
+                })
+
+            return result
         except Exception as e:
             logger.error(f"Erreur récupération cash flows: {e}")
             return []
@@ -155,53 +162,107 @@ class PerformanceTracker:
 
     def __init__(self, trader):
         self.trader = trader
-        self.db = PerformanceDatabase()
+        self.db = PerformanceJSONManager()
         self.last_known_balances = {}
 
-    def detect_cash_flows(self, days=30):
-        """Détecte automatiquement les cash flows via l'API Binance"""
+    def detect_cash_flows_eur_usdc(self):
+        """Détecte les cash flows EUR->USDC et USDC->EUR"""
         try:
-            start_time = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
+            # Charger les snapshots existants
+            snapshots = self.db.get_snapshots()
 
-            # Détecter les dépôts
-            deposits = self.trader.client.get_deposit_history(startTime=start_time)
-            for deposit in deposits:
-                if deposit['status'] == 1:  # Réussi
-                    timestamp = datetime.fromtimestamp(deposit['insertTime'] / 1000)
-                    amount = float(deposit['amount'])
+            if len(snapshots) < 2:
+                return
 
-                    # Convertir en USD si possible
-                    if deposit['coin'] in ['USDT', 'USDC', 'BUSD']:
-                        amount_usd = amount
+            # Analyser les variations d'USDC entre snapshots
+            for i in range(1, len(snapshots)):
+                prev_snapshot = snapshots[i-1]
+                curr_snapshot = snapshots[i]
+
+                # Extraire les balances USDC
+                prev_usdc = prev_snapshot['composition'].get('USDC', {}).get('balance', 0)
+                curr_usdc = curr_snapshot['composition'].get('USDC', {}).get('balance', 0)
+
+                usdc_diff = curr_usdc - prev_usdc
+
+                # Seuil significatif pour détecter un cash flow (>50 USDC de variation)
+                if abs(usdc_diff) > 50:
+                    timestamp = curr_snapshot['timestamp']
+
+                    if usdc_diff > 0:
+                        # Augmentation USDC = Dépôt EUR->USDC
+                        self.db.save_cash_flow(
+                            timestamp, usdc_diff, 'DEPOSIT',
+                            f"Dépôt EUR convertis en USDC (+{usdc_diff:.2f})"
+                        )
                     else:
-                        # Approximation via prix actuel (à améliorer)
-                        amount_usd = amount * self._get_asset_price_usd(deposit['coin'])
+                        # Diminution USDC = Retrait USDC->EUR
+                        self.db.save_cash_flow(
+                            timestamp, usdc_diff, 'WITHDRAW',
+                            f"Retrait USDC convertis en EUR ({usdc_diff:.2f})"
+                        )
 
-                    self.db.save_cash_flow(
-                        timestamp, amount_usd, 'DEPOSIT',
-                        f"Dépôt {deposit['coin']}"
-                    )
-
-            # Détecter les retraits
-            withdraws = self.trader.client.get_withdraw_history(startTime=start_time)
-            for withdraw in withdraws:
-                if withdraw['status'] == 6:  # Réussi
-                    timestamp = datetime.fromtimestamp(withdraw['applyTime'] / 1000)
-                    amount = float(withdraw['amount'])
-
-                    # Convertir en USD si possible
-                    if withdraw['coin'] in ['USDT', 'USDC', 'BUSD']:
-                        amount_usd = amount
-                    else:
-                        amount_usd = amount * self._get_asset_price_usd(withdraw['coin'])
-
-                    self.db.save_cash_flow(
-                        timestamp, -amount_usd, 'WITHDRAW',
-                        f"Retrait {withdraw['coin']}"
-                    )
+            logger.info("🔍 Détection cash flows EUR<->USDC terminée")
 
         except Exception as e:
-            logger.error(f"Erreur détection cash flows: {e}")
+            logger.error(f"Erreur détection cash flows EUR/USDC: {e}")
+
+    def generate_fake_data_for_testing(self):
+        """Génère des données factices pour tester le TWR"""
+        import random
+
+        logger.info("🔧 Génération de données factices pour test TWR...")
+
+        # Point de départ il y a 10 jours
+        start_date = datetime.now() - timedelta(days=10)
+        base_value = 10000.0  # Portfolio initial de 10k$
+
+        # Snapshots quotidiens avec évolution réaliste
+        current_value = base_value
+        for i in range(11):  # 11 snapshots sur 10 jours
+            snapshot_date = start_date + timedelta(days=i)
+
+            # Variation quotidienne entre -5% et +8%
+            daily_variation = random.uniform(-0.05, 0.08)
+            current_value *= (1 + daily_variation)
+
+            # Composition factice (simulate un portfolio crypto)
+            composition = {
+                'BTC': {
+                    'balance': current_value * 0.4 / 45000,  # 40% en BTC
+                    'usd_value': current_value * 0.4,
+                    'percentage': 40.0
+                },
+                'ETH': {
+                    'balance': current_value * 0.3 / 3000,   # 30% en ETH
+                    'usd_value': current_value * 0.3,
+                    'percentage': 30.0
+                },
+                'USDT': {
+                    'balance': current_value * 0.3,          # 30% en USDT
+                    'usd_value': current_value * 0.3,
+                    'percentage': 30.0
+                }
+            }
+
+            self.db.save_snapshot(snapshot_date, current_value, composition)
+
+        # Cash flows factices
+        # Dépôt après 3 jours
+        deposit_date = start_date + timedelta(days=3, hours=10)
+        self.db.save_cash_flow(deposit_date, 2000.0, 'DEPOSIT', 'Test dépôt USDT')
+
+        # Retrait après 7 jours
+        withdraw_date = start_date + timedelta(days=7, hours=14)
+        self.db.save_cash_flow(withdraw_date, -1500.0, 'WITHDRAW', 'Test retrait USDT')
+
+        logger.info(f"✅ Données factices générées:")
+        logger.info(f"   - 11 snapshots du {start_date.date()} à aujourd'hui")
+        logger.info(f"   - 1 dépôt de 2000$ le {deposit_date.date()}")
+        logger.info(f"   - 1 retrait de 1500$ le {withdraw_date.date()}")
+        logger.info(f"   - Portfolio final: ${current_value:.2f}")
+
+        return True
 
     def _get_asset_price_usd(self, asset):
         """Obtient le prix USD d'un actif"""
@@ -257,11 +318,13 @@ class PerformanceTracker:
                 return {'days': 0, 'first_snapshot': None, 'total_snapshots': 0}
 
             first_snapshot = snapshots[0]['timestamp']
-            days_tracking = (datetime.now() - first_snapshot).days
+            last_snapshot = snapshots[-1]['timestamp']
+            days_tracking = (last_snapshot - first_snapshot).days
 
             return {
                 'days': days_tracking,
                 'first_snapshot': first_snapshot,
+                'last_snapshot': last_snapshot,
                 'total_snapshots': len(snapshots)
             }
 
@@ -275,7 +338,12 @@ class PerformanceTracker:
             snapshots = self.db.get_snapshots(start_date, end_date)
             cash_flows = self.db.get_cash_flows(start_date, end_date)
 
+            logger.info(f"TWR Debug: période {start_date} à {end_date}")
+            logger.info(f"  - Snapshots trouvés: {len(snapshots)}")
+            logger.info(f"  - Cash flows trouvés: {len(cash_flows)}")
+
             if len(snapshots) < 2:
+                logger.warning(f"  - Pas assez de snapshots ({len(snapshots)}) pour calculer TWR")
                 return None
 
             # Créer les périodes basées sur les cash flows
@@ -314,88 +382,44 @@ class PerformanceTracker:
 
             # Calculer TWR
             cumulative_return = 1.0
+            logger.info(f"  - Périodes à calculer: {len(periods)}")
 
-            for period in periods:
+            for i, period in enumerate(periods):
                 if period['start_value'] > 0:
                     period_return = (
                         (period['end_value'] - period['start_value'] - period['cash_flow'])
                         / (period['start_value'] + max(0, period['cash_flow']))
                     )
                     cumulative_return *= (1 + period_return)
+                    logger.info(f"    Période {i+1}: {period['start_value']:.0f} -> {period['end_value']:.0f} (CF: {period['cash_flow']:.0f}) = {period_return*100:.2f}%")
 
             twr = cumulative_return - 1
+            logger.info(f"  - TWR final: {twr*100:.2f}%")
             return twr
 
         except Exception as e:
             logger.error(f"Erreur calcul TWR: {e}")
             return None
 
-    def get_benchmark_performance(self, asset, start_date, end_date):
-        """Calcule la performance d'un benchmark (BTC, ETH) sur la période"""
-        try:
-            # Obtenir prix de début et fin de période
-            start_price = self._get_historical_price(asset, start_date)
-            end_price = self._get_historical_price(asset, end_date)
-
-            if start_price > 0 and end_price > 0:
-                return (end_price / start_price) - 1
-            return 0.0
-
-        except Exception as e:
-            logger.error(f"Erreur benchmark {asset}: {e}")
-            return 0.0
-
-    def _get_historical_price(self, asset, date):
-        """Obtient le prix historique d'un actif"""
-        try:
-            symbol = f"{asset}USDT"
-            start_time = int(date.timestamp() * 1000)
-            end_time = start_time + (24 * 60 * 60 * 1000)
-
-            klines = self.trader.client.get_klines(
-                symbol=symbol,
-                interval='1d',
-                startTime=start_time,
-                endTime=end_time,
-                limit=1
-            )
-
-            if klines:
-                return float(klines[0][4])  # Prix de clôture
-            else:
-                # Fallback sur prix actuel si pas d'historique
-                ticker = self.trader.client.get_symbol_ticker(symbol=symbol)
-                return float(ticker['price'])
-
-        except Exception as e:
-            logger.error(f"Erreur prix historique {asset}: {e}")
-            return 0.0
 
     def calculate_performance_metrics(self, days):
         """Calcule toutes les métriques pour une période"""
         try:
-            end_date = datetime.now()
+            # Utiliser la date du dernier snapshot comme référence au lieu de maintenant
+            all_snapshots = self.db.get_snapshots()
+            if not all_snapshots:
+                return None
+
+            end_date = all_snapshots[-1]['timestamp']  # Dernier snapshot
             start_date = end_date - timedelta(days=days)
 
             # TWR du portfolio
             twr = self.calculate_twr(start_date, end_date)
 
-            # Benchmarks
-            btc_performance = self.get_benchmark_performance('BTC', start_date, end_date)
-            eth_performance = self.get_benchmark_performance('ETH', start_date, end_date)
-
-            # Alpha (outperformance)
-            alpha_btc = twr - btc_performance if twr is not None else None
-            alpha_eth = twr - eth_performance if twr is not None else None
-
             return {
                 'period_days': days,
                 'twr': twr,
-                'twr_annualized': ((1 + twr) ** (365 / days) - 1) if twr is not None else None,
-                'benchmark_btc': btc_performance,
-                'benchmark_eth': eth_performance,
-                'alpha_btc': alpha_btc,
-                'alpha_eth': alpha_eth,
+                'twr_annualized': ((1 + twr) ** (365 / days) - 1) if twr is not None and days <= 365 else None,
                 'start_date': start_date,
                 'end_date': end_date
             }
@@ -412,205 +436,112 @@ class PerformanceInterface:
         self.trader = trader
         self.tracker = PerformanceTracker(trader)
 
-        # Variables d'affichage
-        self.metrics_7d = tk.StringVar(value="7j: Initialisation...")
-        self.metrics_30d = tk.StringVar(value="30j: Initialisation...")
-        self.metrics_90d = tk.StringVar(value="90j: Initialisation...")
-
-        self.benchmark_btc = tk.StringVar(value="vs BTC: --")
-        self.benchmark_eth = tk.StringVar(value="vs ETH: --")
+        # Variables de statut interne
         self.tracking_status = tk.StringVar(value="Initialisation tracking...")
 
         # Initialisation sans snapshot immédiat
         self.snapshot_taken_on_launch = False
+        self.first_refresh_done = False
 
     def take_launch_snapshot_if_needed(self):
-        """Prend un snapshot au lancement si pas encore fait et portfolio chargé"""
+        """Vérifie au lancement mais attend le premier rafraîchissement pour snapshot"""
         if self.snapshot_taken_on_launch:
             return
 
-        def take_snapshot():
-            try:
-                # Prendre snapshot automatique
-                snapshot_taken = self.tracker.save_current_snapshot()
+        # Marquer comme traité pour éviter les rappels
+        self.snapshot_taken_on_launch = True
 
-                if snapshot_taken:
-                    self.snapshot_taken_on_launch = True
-                    # Obtenir stats de tracking
-                    stats = self.tracker.get_tracking_stats()
-
-                    if stats['days'] == 0:
-                        self.tracking_status.set("📊 Tracking démarré au lancement")
-                    else:
-                        self.tracking_status.set(f"📊 Données depuis {stats['days']} jours")
-
-                    # Actualiser l'affichage adaptatif
-                    self.update_adaptive_display(stats)
-                    logger.info("🚀 Snapshot de lancement pris avec succès")
-
-            except Exception as e:
-                logger.error(f"Erreur snapshot lancement: {e}")
-                self.tracking_status.set("❌ Erreur snapshot")
-
-        threading.Thread(target=take_snapshot, daemon=True).start()
-
-    def update_adaptive_display(self, stats):
-        """Met à jour l'affichage selon les données disponibles"""
-        days = stats['days']
-
-        if days < 7:
-            self.metrics_7d.set("7j: Attendez 7 jours")
-            self.metrics_30d.set("30j: Attendez 30 jours")
-            self.metrics_90d.set("90j: Attendez 90 jours")
-        elif days < 30:
-            self.metrics_7d.set("7j: Données disponibles")
-            self.metrics_30d.set("30j: Attendez 30 jours")
-            self.metrics_90d.set("90j: Attendez 90 jours")
-        elif days < 90:
-            self.metrics_7d.set("7j: Données disponibles")
-            self.metrics_30d.set("30j: Données disponibles")
-            self.metrics_90d.set("90j: Attendez 90 jours")
+        # Actualiser l'affichage sans prendre de snapshot
+        stats = self.tracker.get_tracking_stats()
+        if stats['total_snapshots'] == 0:
+            self.tracking_status.set("📊 En attente du premier rafraîchissement...")
         else:
-            self.metrics_7d.set("7j: Données disponibles")
-            self.metrics_30d.set("30j: Données disponibles")
-            self.metrics_90d.set("90j: Données disponibles")
+            if stats['days'] == 0:
+                self.tracking_status.set("📊 Tracking démarré - En attente rafraîchissement")
+            else:
+                self.tracking_status.set(f"📊 Données depuis {stats['days']} jours - En attente rafraîchissement")
 
-    def create_performance_ui(self, parent):
-        """Crée l'interface Performance Analytics"""
-        perf_frame = ttk.LabelFrame(parent, text="📊 Performance Analytics (TWR)", padding="10")
-        perf_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        # Ligne 0 - Status tracking
-        status_row = ttk.Frame(perf_frame)
-        status_row.pack(fill=tk.X, pady=2)
-        ttk.Label(status_row, textvariable=self.tracking_status, font=("Arial", 9), foreground="gray").pack(side=tk.LEFT)
+        # Démarrer les snapshots périodiques toutes les 2h
+        self.start_periodic_snapshots()
+        logger.info("📸 Snapshot sera pris après le premier rafraîchissement du portfolio")
 
-        # Ligne 1 - Métriques principales
-        metrics_row = ttk.Frame(perf_frame)
-        metrics_row.pack(fill=tk.X, pady=2)
+    def start_periodic_snapshots(self):
+        """Démarre les snapshots automatiques toutes les 2h"""
+        def periodic_snapshot():
+            while True:
+                try:
+                    # Attendre 2 heures (7200 secondes)
+                    threading.Event().wait(7200)
 
-        ttk.Label(metrics_row, textvariable=self.metrics_7d, font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
-        ttk.Label(metrics_row, textvariable=self.metrics_30d, font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
-        ttk.Label(metrics_row, textvariable=self.metrics_90d, font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
+                    # Prendre un snapshot
+                    snapshot_taken = self.tracker.save_current_snapshot()
+                    if snapshot_taken:
+                        logger.info("📸 Snapshot automatique périodique (2h)")
 
-        # Ligne 2 - Benchmarks
-        benchmark_row = ttk.Frame(perf_frame)
-        benchmark_row.pack(fill=tk.X, pady=2)
+                except Exception as e:
+                    logger.error(f"Erreur snapshot périodique: {e}")
 
-        ttk.Label(benchmark_row, textvariable=self.benchmark_btc, font=("Arial", 9), foreground="blue").pack(side=tk.LEFT, padx=10)
-        ttk.Label(benchmark_row, textvariable=self.benchmark_eth, font=("Arial", 9), foreground="purple").pack(side=tk.LEFT, padx=10)
+        # Démarrer le thread en arrière-plan
+        threading.Thread(target=periodic_snapshot, daemon=True).start()
+        logger.info("⏰ Snapshots automatiques toutes les 2h activés")
 
-        # Ligne 3 - Boutons
-        buttons_row = ttk.Frame(perf_frame)
-        buttons_row.pack(fill=tk.X, pady=5)
+    def check_and_take_snapshot_after_refresh(self):
+        """Prend un snapshot après le premier rafraîchissement si nécessaire"""
+        try:
+            logger.info("📊 Vérification snapshot après premier rafraîchissement...")
+            snapshots = self.tracker.db.get_snapshots()
 
-        ttk.Button(buttons_row, text="🔄 Actualiser", command=self.refresh_metrics).pack(side=tk.LEFT, padx=5)
-        ttk.Button(buttons_row, text="🔍 Analyser", command=self.detailed_analysis).pack(side=tk.LEFT, padx=5)
+            if not snapshots:
+                # Premier snapshot jamais pris
+                logger.info("📸 Aucun snapshot existant - prise du premier snapshot")
+                snapshot_taken = self.tracker.save_current_snapshot()
+                if snapshot_taken:
+                    logger.info("✅ Premier snapshot sauvé avec succès")
+                    self.tracking_status.set("📊 Tracking démarré")
+                return
 
-        return perf_frame
+            # Vérifier si le dernier snapshot a plus de 2h
+            last_snapshot_time = snapshots[-1]['timestamp']
+            now = datetime.now()
+            hours_since_last = (now - last_snapshot_time).total_seconds() / 3600
+
+            if (now - last_snapshot_time).total_seconds() > 7200:  # 2h en secondes
+                logger.info(f"📸 Dernier snapshot date de {hours_since_last:.1f}h - Snapshot de rattrapage nécessaire")
+                snapshot_taken = self.tracker.save_current_snapshot()
+                if snapshot_taken:
+                    logger.info("✅ Snapshot de rattrapage sauvé avec succès")
+                    # Actualiser le statut
+                    stats = self.tracker.get_tracking_stats()
+                    self.tracking_status.set(f"📊 Données depuis {stats['days']} jours")
+            else:
+                logger.info(f"📊 Dernier snapshot date de {hours_since_last:.1f}h - Pas de snapshot nécessaire")
+                # Actualiser juste le statut
+                stats = self.tracker.get_tracking_stats()
+                self.tracking_status.set(f"📊 Données depuis {stats['days']} jours")
+
+        except Exception as e:
+            logger.error(f"Erreur snapshot après rafraîchissement: {e}")
+
+
 
     def refresh_metrics(self):
-        """Actualise toutes les métriques de performance"""
-        def calculate():
-            try:
-                # Obtenir stats de tracking d'abord
-                stats = self.tracker.get_tracking_stats()
-                days_available = stats['days']
+        """Met à jour le statut de tracking"""
+        try:
+            stats = self.tracker.get_tracking_stats()
+            days_available = stats['days']
 
-                # Mettre à jour le status
-                if days_available == 0:
-                    self.tracking_status.set("📊 Tracking démarré aujourd'hui")
-                else:
-                    self.tracking_status.set(f"📊 Données depuis {days_available} jours")
+            if days_available == 0:
+                self.tracking_status.set("📊 Tracking démarré aujourd'hui")
+            else:
+                self.tracking_status.set(f"📊 Données depuis {days_available} jours")
 
-                # Calculer les métriques selon disponibilité
-                periods_to_calculate = []
-                if days_available >= 7:
-                    periods_to_calculate.append((7, self.metrics_7d))
-                if days_available >= 30:
-                    periods_to_calculate.append((30, self.metrics_30d))
-                if days_available >= 90:
-                    periods_to_calculate.append((90, self.metrics_90d))
+            logger.info(f"Métriques de performance actualisées pour {days_available} jours de données")
 
-                # Calculer les métriques disponibles
-                for days, var in periods_to_calculate:
-                    var.set(f"{days}j: Calcul...")
+        except Exception as e:
+            logger.error(f"Erreur refresh métriques: {e}")
 
-                    metrics = self.tracker.calculate_performance_metrics(days)
 
-                    if metrics and metrics['twr'] is not None:
-                        twr = metrics['twr'] * 100
-                        emoji = "📈" if twr > 0 else "📉" if twr < 0 else "➡️"
-                        var.set(f"{days}j: {emoji} {twr:+.1f}%")
-                    else:
-                        var.set(f"{days}j: ❌ N/A")
 
-                # Calculer benchmarks pour 30j si disponible
-                if days_available >= 30:
-                    metrics_30 = self.tracker.calculate_performance_metrics(30)
-                    if metrics_30:
-                        btc_perf = metrics_30['benchmark_btc'] * 100
-                        eth_perf = metrics_30['benchmark_eth'] * 100
 
-                        alpha_btc = metrics_30['alpha_btc'] * 100 if metrics_30['alpha_btc'] else 0
-                        alpha_eth = metrics_30['alpha_eth'] * 100 if metrics_30['alpha_eth'] else 0
 
-                        self.benchmark_btc.set(f"vs BTC: {btc_perf:+.1f}% (α: {alpha_btc:+.1f}%)")
-                        self.benchmark_eth.set(f"vs ETH: {eth_perf:+.1f}% (α: {alpha_eth:+.1f}%)")
-                else:
-                    self.benchmark_btc.set("vs BTC: Attendez 30 jours")
-                    self.benchmark_eth.set("vs ETH: Attendez 30 jours")
-
-                # Mettre à jour l'affichage adaptatif
-                self.update_adaptive_display(stats)
-
-            except Exception as e:
-                logger.error(f"Erreur refresh métriques: {e}")
-                messagebox.showerror("Erreur", f"Erreur calcul: {e}")
-
-        threading.Thread(target=calculate, daemon=True).start()
-
-    def detailed_analysis(self):
-        """Affiche une analyse détaillée"""
-        def analyze():
-            try:
-                # Créer une fenêtre popup avec plus de détails
-                analysis_window = tk.Toplevel()
-                analysis_window.title("📊 Analyse Détaillée")
-                analysis_window.geometry("600x400")
-
-                # TODO: Implémenter analyse détaillée avec graphiques
-                text_area = tk.Text(analysis_window, wrap=tk.WORD, padx=10, pady=10)
-                text_area.pack(fill=tk.BOTH, expand=True)
-
-                # Placeholder pour analyse détaillée
-                analysis_text = """
-Performance Analytics - Analyse Détaillée
-
-🎯 Time-Weighted Return (TWR)
-Mesure la performance pure de vos décisions de trading,
-indépendamment du timing et de la taille de vos investissements.
-
-📈 Métriques Calculées:
-- TWR 7/30/90 jours
-- Performance vs Hold BTC/ETH
-- Alpha (outperformance vs benchmarks)
-
-💡 Prochaines fonctionnalités:
-- Graphiques de performance
-- Attribution par actif
-- Analyse des drawdowns
-- Sharpe Ratio
-
-Base de données: performance.db
-Snapshots automatiques quotidiens
-Détection auto des cash flows
-"""
-
-                text_area.insert(tk.END, analysis_text)
-                text_area.config(state=tk.DISABLED)
-
-            except Exception as e:
-                logger.error(f"Erreur analyse détaillée: {e}")
-
-        threading.Thread(target=analyze, daemon=True).start()

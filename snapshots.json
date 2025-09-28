@@ -1,0 +1,134 @@
+[
+  {
+    "timestamp": "2025-09-28T18:02:55.453319",
+    "total_value_usd": 4088.469316503635,
+    "composition": {
+      "BTC": {
+        "balance": 0.00743705,
+        "usd_value": 818.9826713589999,
+        "percentage": 20.031522996958063
+      },
+      "ETH": {
+        "balance": 0.03055287,
+        "usd_value": 123.0797925654,
+        "percentage": 3.010412529417122
+      },
+      "LINK": {
+        "balance": 5.84893274,
+        "usd_value": 123.12003417700001,
+        "percentage": 3.011396800264834
+      },
+      "USDC": {
+        "balance": 2044.57272267,
+        "usd_value": 2044.57272267,
+        "percentage": 50.00826872826997
+      },
+      "DOGE": {
+        "balance": 532.27949712,
+        "usd_value": 122.6691329062752,
+        "percentage": 3.0003681918586347
+      },
+      "SOL": {
+        "balance": 0.60781639,
+        "usd_value": 123.9155274293,
+        "percentage": 3.0308537948199574
+      },
+      "AVAX": {
+        "balance": 4.31833961,
+        "usd_value": 124.71364793679999,
+        "percentage": 3.0503750494929047
+      },
+      "SUI": {
+        "balance": 38.13365486,
+        "usd_value": 121.634918906942,
+        "percentage": 2.9750723190203954
+      },
+      "SEI": {
+        "balance": 440.8805245,
+        "usd_value": 121.9475530767,
+        "percentage": 2.9827190480418415
+      },
+      "TAO": {
+        "balance": 0.40877448,
+        "usd_value": 121.28338821599999,
+        "percentage": 2.9664742187601583
+      },
+      "ONDO": {
+        "balance": 138.04783377,
+        "usd_value": 122.103308969565,
+        "percentage": 2.9865286863393887
+      },
+      "VIRTUAL": {
+        "balance": 117.98081917,
+        "usd_value": 120.44661829065299,
+        "percentage": 2.946007636756735
+      }
+    }
+  },
+  {
+    "timestamp": "2025-09-29T01:18:28.887941",
+    "total_value_usd": 4137.326754186008,
+    "composition": {
+      "BTC": {
+        "balance": 0.00743705,
+        "usd_value": 833.5595124705,
+        "percentage": 20.147297083246627
+      },
+      "ETH": {
+        "balance": 0.03055287,
+        "usd_value": 126.07580699759998,
+        "percentage": 3.047277009727132
+      },
+      "LINK": {
+        "balance": 5.84893274,
+        "usd_value": 126.6878831484,
+        "percentage": 3.062071010471229
+      },
+      "USDC": {
+        "balance": 2044.57272267,
+        "usd_value": 2044.57272267,
+        "percentage": 49.41772415247044
+      },
+      "DOGE": {
+        "balance": 532.27949712,
+        "usd_value": 125.7137716298016,
+        "percentage": 3.038526543802919
+      },
+      "SOL": {
+        "balance": 0.60781639,
+        "usd_value": 127.7690833419,
+        "percentage": 3.0882038314384417
+      },
+      "AVAX": {
+        "balance": 4.31833961,
+        "usd_value": 129.2479045273,
+        "percentage": 3.1239472298515296
+      },
+      "SUI": {
+        "balance": 38.13365486,
+        "usd_value": 124.876279570042,
+        "percentage": 3.0182841962795517
+      },
+      "SEI": {
+        "balance": 440.8805245,
+        "usd_value": 124.32830790899999,
+        "percentage": 3.005039613639624
+      },
+      "TAO": {
+        "balance": 0.40877448,
+        "usd_value": 125.166745776,
+        "percentage": 3.0253048215096983
+      },
+      "ONDO": {
+        "balance": 138.04783377,
+        "usd_value": 125.07133739562002,
+        "percentage": 3.0229987822227735
+      },
+      "VIRTUAL": {
+        "balance": 117.98081917,
+        "usd_value": 124.257398749844,
+        "percentage": 3.003325725340029
+      }
+    }
+  }
+]
