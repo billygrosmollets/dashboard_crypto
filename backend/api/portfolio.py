@@ -6,9 +6,8 @@ Handles portfolio balance fetching and refresh operations
 import logging
 from flask import Blueprint, jsonify, request
 from services.session_manager import session_manager
-from db.models import db, PortfolioBalance
-from datetime import datetime
-from utils.portfolio_utils import update_portfolio_balances, refresh_portfolio_from_binance
+from services.portfolio_cache import portfolio_cache
+from utils.portfolio_utils import refresh_portfolio_from_binance
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ portfolio_bp = Blueprint('portfolio', __name__)
 def get_balances():
     """
     GET /api/portfolio/balances
-    Get cached portfolio balances from database
+    Get cached portfolio balances from in-memory cache
 
     Returns:
         {
@@ -32,30 +31,20 @@ def get_balances():
         }
     """
     try:
-        # Get all balances from database (cache)
-        balances = PortfolioBalance.query.all()
+        # Check if cache is empty (e.g., just started)
+        if portfolio_cache.is_balances_empty():
+            logger.info("Cache empty, forcing refresh...")
+            trader = session_manager.get_trader()
+            refresh_portfolio_from_binance(trader, 5.0)
 
-        if not balances:
-            # No cached balances, trigger a refresh
-            logger.info("No cached balances found, triggering refresh...")
-            return refresh_portfolio()
+        # Get balances from in-memory cache
+        cache_data = portfolio_cache.get_balances()
 
-        # Calculate total
-        total_value_usd = sum(b.usd_value for b in balances)
+        # Sort by USD value (descending)
+        cache_data['balances'].sort(key=lambda x: x['usd_value'], reverse=True)
+        cache_data['count'] = len(cache_data['balances'])
 
-        # Convert to dict and sort by USD value (descending)
-        balances_list = [b.to_dict() for b in balances]
-        balances_list.sort(key=lambda x: x['usd_value'], reverse=True)
-
-        # Get last update timestamp
-        last_updated = max(b.last_updated for b in balances) if balances else datetime.utcnow()
-
-        return jsonify({
-            'total_value_usd': total_value_usd,
-            'balances': balances_list,
-            'last_updated': last_updated.isoformat(),
-            'count': len(balances_list)
-        }), 200
+        return jsonify(cache_data), 200
 
     except Exception as e:
         logger.error(f"Error fetching balances: {e}")
@@ -98,5 +87,4 @@ def refresh_portfolio():
         return jsonify({'error': 'Binance session not initialized'}), 500
     except Exception as e:
         logger.error(f"Error refreshing portfolio: {e}")
-        db.session.rollback()
         return jsonify({'error': str(e)}), 500

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
 Auto-Refresh Service
-Background service that refreshes portfolio every 60 seconds
-Matches the behavior of the original Tkinter app
+Background service that refreshes portfolio every 10 seconds
+Creates snapshots every 10 minutes (60 refreshes)
 """
 import logging
 import threading
 import time
 from datetime import datetime
 from services.session_manager import session_manager
-from db.models import db, PortfolioBalance
 from utils.portfolio_utils import refresh_portfolio_from_binance
 from core.performance_tracker import PerformanceTracker
 
@@ -73,7 +72,7 @@ class AutoRefreshService:
                 time.sleep(self.interval)
 
     def _refresh_portfolio(self):
-        """Refresh portfolio from Binance API and update database"""
+        """Refresh portfolio from Binance API and update in-memory cache"""
         try:
             trader = session_manager.get_trader()
             fresh_balances, total_value_usd = refresh_portfolio_from_binance(trader, 5.0)
@@ -82,7 +81,7 @@ class AutoRefreshService:
             self.last_refresh_time = datetime.utcnow()
             self.refresh_count += 1
 
-            # Take snapshot every snapshot_interval refreshes (e.g., every 120 refreshes = 2 hours)
+            # Take snapshot every snapshot_interval refreshes (e.g., every 60 refreshes = 10 minutes)
             if self.refresh_count % self.snapshot_interval == 0:
                 self._take_snapshot()
 
@@ -94,7 +93,6 @@ class AutoRefreshService:
             logger.error(f"Session not initialized: {e}")
         except Exception as e:
             logger.error(f"Error refreshing portfolio: {e}")
-            db.session.rollback()
 
     def _take_snapshot(self):
         """

@@ -192,7 +192,7 @@ def create_cash_flow():
 def get_twr(days):
     """
     GET /api/performance/twr/:days
-    Calculate TWR for a period
+    Calculate TWR for a period (with caching)
 
     Path:
         days: Number of days (7, 30, 90, etc.)
@@ -208,17 +208,29 @@ def get_twr(days):
         }
     """
     try:
+        from services.portfolio_cache import portfolio_cache
+
+        # Get latest snapshot ID for cache invalidation
+        latest_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
+        snapshot_id = latest_snapshot.id if latest_snapshot else None
+
+        # Check cache first
+        period_key = 'total' if days == 0 else f'{days}d'
+        cached_metrics = portfolio_cache.get_twr(period_key, snapshot_id)
+
+        if cached_metrics:
+            return jsonify(cached_metrics), 200
+
+        # Cache miss - calculate
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
-
-        # Calculate metrics
         metrics = tracker.calculate_performance_metrics(days)
 
         if not metrics or metrics['twr'] is None:
             return jsonify({
                 'error': f'Not enough data for {days} days period',
                 'period_days': days
-            }), 200  # 200 because it's not an error, just not enough data
+            }), 200
 
         # Add percentage representation
         metrics['twr_percent'] = metrics['twr'] * 100 if metrics['twr'] is not None else None
@@ -227,6 +239,9 @@ def get_twr(days):
         # Convert dates to ISO format
         metrics['start_date'] = metrics['start_date'].isoformat()
         metrics['end_date'] = metrics['end_date'].isoformat()
+
+        # Cache the result
+        portfolio_cache.set_twr(period_key, metrics, snapshot_id)
 
         return jsonify(metrics), 200
 
@@ -242,7 +257,7 @@ def get_twr(days):
 def get_pnl(days):
     """
     GET /api/performance/pnl/:days
-    Calculate simple P&L for a period
+    Calculate simple P&L for a period (with caching)
 
     Formula: P&L = (Current Value - Initial Value) - Net Cash Flow
 
@@ -261,10 +276,23 @@ def get_pnl(days):
         }
     """
     try:
+        from services.portfolio_cache import portfolio_cache
+
+        # Get latest snapshot ID for cache invalidation
+        latest_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
+        snapshot_id = latest_snapshot.id if latest_snapshot else None
+
+        # Check cache first
+        period_key = 'total' if days == 0 else f'{days}d'
+        cached_pnl = portfolio_cache.get_pnl(period_key, snapshot_id)
+
+        if cached_pnl:
+            return jsonify(cached_pnl), 200
+
+        # Cache miss - calculate
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
 
-        # Calculate simple P&L
         if days == 0:
             pnl = tracker.calculate_simple_pnl(days=None)
         else:
@@ -273,6 +301,9 @@ def get_pnl(days):
         # Format dates for JSON
         pnl['period_start'] = pnl['period_start'].isoformat()
         pnl['period_end'] = pnl['period_end'].isoformat()
+
+        # Cache the result
+        portfolio_cache.set_pnl(period_key, pnl, snapshot_id)
 
         return jsonify(pnl), 200
 
@@ -298,7 +329,8 @@ def get_stats():
             total_deposits_usd: float,
             total_withdrawals_usd: float,
             first_snapshot_date: str,
-            last_snapshot_date: str
+            last_snapshot_date: str,
+            latest_snapshot_id: int (for cache invalidation)
         }
     """
     try:
@@ -307,6 +339,9 @@ def get_stats():
 
         # Get tracking stats
         stats = tracker.get_tracking_stats()
+
+        # Get latest snapshot ID for cache invalidation
+        latest_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
 
         # Get cash flow count and totals
         cashflow_count = CashFlow.query.count()
@@ -323,7 +358,8 @@ def get_stats():
             'total_deposits_usd': total_deposits,
             'total_withdrawals_usd': total_withdrawals,
             'first_snapshot_date': stats['first_snapshot'].isoformat() if stats['first_snapshot'] else None,
-            'last_snapshot_date': stats['last_snapshot'].isoformat() if stats['last_snapshot'] else None
+            'last_snapshot_date': stats['last_snapshot'].isoformat() if stats['last_snapshot'] else None,
+            'latest_snapshot_id': latest_snapshot.id if latest_snapshot else None  # For cache invalidation
         }
 
         return jsonify(result), 200
