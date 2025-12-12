@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from services.session_manager import session_manager
 from db.models import db, PortfolioBalance
 from datetime import datetime
+from utils.portfolio_utils import update_portfolio_balances, refresh_portfolio_from_binance
 
 logger = logging.getLogger(__name__)
 
@@ -75,45 +76,10 @@ def refresh_portfolio():
         }
     """
     try:
-        # Get trader instance
         trader = session_manager.get_trader()
-
-        # Get fresh balances from Binance
         min_value = request.json.get('min_value', 5.0) if request.is_json else 5.0
-        fresh_balances = trader.get_all_balances_usd(min_value)
 
-        if not fresh_balances:
-            return jsonify({
-                'message': 'No balances found above minimum threshold',
-                'total_value_usd': 0,
-                'balances_count': 0
-            }), 200
-
-        # Calculate total and percentages
-        total_value_usd = sum(data['usd_value'] for data in fresh_balances.values())
-
-        # Update database cache
-        # Delete old balances
-        PortfolioBalance.query.delete()
-
-        # Insert fresh balances
-        for asset, data in fresh_balances.items():
-            percentage = (data['usd_value'] / total_value_usd * 100) if total_value_usd > 0 else 0
-
-            balance = PortfolioBalance(
-                asset=asset,
-                balance=data['balance'],
-                free=data['free'],
-                locked=data['locked'],
-                usd_value=data['usd_value'],
-                percentage=percentage,
-                last_updated=datetime.utcnow()
-            )
-            db.session.add(balance)
-
-        db.session.commit()
-
-        logger.info(f"✅ Portfolio refreshed: ${total_value_usd:.2f} ({len(fresh_balances)} assets)")
+        fresh_balances, total_value_usd = refresh_portfolio_from_binance(trader, min_value)
 
         return jsonify({
             'message': 'Portfolio refreshed successfully',
@@ -121,6 +87,12 @@ def refresh_portfolio():
             'balances_count': len(fresh_balances)
         }), 200
 
+    except ValueError as e:
+        return jsonify({
+            'message': str(e),
+            'total_value_usd': 0,
+            'balances_count': 0
+        }), 200
     except RuntimeError as e:
         logger.error(f"Session not initialized: {e}")
         return jsonify({'error': 'Binance session not initialized'}), 500
@@ -128,67 +100,3 @@ def refresh_portfolio():
         logger.error(f"Error refreshing portfolio: {e}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
-
-@portfolio_bp.route('/assets/tradeable', methods=['GET'])
-def get_tradeable_assets():
-    """
-    GET /api/portfolio/assets/tradeable
-    Get list of all tradeable assets on Binance
-
-    Returns:
-        {
-            assets: [str, ...],
-            count: int
-        }
-    """
-    try:
-        trader = session_manager.get_trader()
-        assets = trader.get_all_tradeable_assets()
-
-        return jsonify({
-            'assets': assets,
-            'count': len(assets)
-        }), 200
-
-    except RuntimeError as e:
-        logger.error(f"Session not initialized: {e}")
-        return jsonify({'error': 'Binance session not initialized'}), 500
-    except Exception as e:
-        logger.error(f"Error fetching tradeable assets: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@portfolio_bp.route('/connection/test', methods=['GET'])
-def test_connection():
-    """
-    GET /api/portfolio/connection/test
-    Test Binance API connection
-
-    Returns:
-        {
-            connected: bool,
-            message: str
-        }
-    """
-    try:
-        trader = session_manager.get_trader()
-        connected = trader.test_connection()
-
-        return jsonify({
-            'connected': connected,
-            'message': 'Connected to Binance API' if connected else 'Failed to connect to Binance API'
-        }), 200 if connected else 503
-
-    except RuntimeError as e:
-        logger.error(f"Session not initialized: {e}")
-        return jsonify({
-            'connected': False,
-            'message': 'Binance session not initialized'
-        }), 500
-    except Exception as e:
-        logger.error(f"Error testing connection: {e}")
-        return jsonify({
-            'connected': False,
-            'message': str(e)
-        }), 500

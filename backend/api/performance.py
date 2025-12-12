@@ -274,13 +274,6 @@ def get_pnl(days):
         pnl['period_start'] = pnl['period_start'].isoformat()
         pnl['period_end'] = pnl['period_end'].isoformat()
 
-        # Compatibility with old frontend format
-        pnl['realized_pnl_usd'] = pnl['pnl_usd']  # All P&L is "realized" now
-        pnl['unrealized_pnl_usd'] = 0  # No separate unrealized
-        pnl['total_pnl_usd'] = pnl['pnl_usd']
-        pnl['total_fees_usd'] = 0  # Fees included in P&L
-        pnl['trade_count'] = 0  # Not tracked anymore
-
         return jsonify(pnl), 200
 
     except RuntimeError as e:

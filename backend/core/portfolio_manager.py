@@ -5,12 +5,10 @@ Handles portfolio rebalancing with trade history tracking
 """
 import logging
 from datetime import datetime
-from db.models import db, ConversionHistory
+from db.models import db
+from constants import STABLECOINS
 
 logger = logging.getLogger(__name__)
-
-# Stablecoins list
-STABLECOINS = {'USDT', 'USDC', 'BUSD', 'FDUSD', 'DAI', 'TUSD'}
 
 
 class PortfolioManager:
@@ -110,49 +108,6 @@ class PortfolioManager:
         logger.info(f"Primary stablecoin detected: {primary}")
         return primary
 
-    def _save_conversion_history(self, from_asset, to_asset, amount, result):
-        """
-        Save conversion to database for P&L tracking
-
-        Args:
-            from_asset: Asset being sold
-            to_asset: Asset being bought
-            amount: Quantity of from_asset
-            result: Conversion result from trader.convert_asset()
-        """
-        try:
-            conversion_type = result.get('type', 'direct')
-
-            # Calculate result amount based on conversion type
-            if conversion_type == 'direct':
-                order = result.get('order', {})
-                result_amount = sum(float(fill['qty']) for fill in order.get('fills', []))
-            elif conversion_type == 'triangular':
-                order2 = result.get('order2', {})
-                result_amount = sum(float(fill['qty']) for fill in order2.get('fills', []))
-            else:
-                result_amount = 0
-
-            conversion = ConversionHistory(
-                timestamp=datetime.utcnow(),
-                from_asset=from_asset,
-                to_asset=to_asset,
-                amount=amount,
-                result_amount=result_amount,
-                fee_usd=result.get('total_fee_usdt', 0),
-                conversion_type=conversion_type,
-                status='SUCCESS'
-            )
-
-            db.session.add(conversion)
-            db.session.commit()
-
-            logger.info(f"💾 Saved conversion: {amount:.8f} {from_asset} → {result_amount:.8f} {to_asset}")
-
-        except Exception as e:
-            logger.error(f"Error saving conversion history: {e}")
-            db.session.rollback()
-
     def execute_rebalancing(self, actions):
         """
         Execute rebalancing actions
@@ -231,9 +186,6 @@ class PortfolioManager:
                         })
                         continue
 
-                    # Save conversion history
-                    self._save_conversion_history(asset, primary_stable, quantity, result)
-
                     results.append({
                         'asset': asset,
                         'action': trade_action,
@@ -256,9 +208,6 @@ class PortfolioManager:
                             'fees_usd': 0
                         })
                         continue
-
-                    # Save conversion history
-                    self._save_conversion_history(primary_stable, asset, usd_amount, result)
 
                     results.append({
                         'asset': asset,

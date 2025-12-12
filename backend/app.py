@@ -86,16 +86,17 @@ def create_app(config_name='development'):
             'trader_initialized': session_manager.is_initialized()
         }
 
+    # Start auto-refresh service (must be after app creation)
+    from services.auto_refresh import start_auto_refresh
+    start_auto_refresh(app)
+    logger.info("✅ Auto-refresh service started")
+
     logger.info("🚀 Flask application created successfully")
     return app
 
 
 if __name__ == '__main__':
     app = create_app('development')
-
-    # Start auto-refresh service
-    from services.auto_refresh import start_auto_refresh
-    start_auto_refresh(app)
 
     logger.info("=" * 60)
     logger.info("🚀 Starting Binance Portfolio Manager Backend")

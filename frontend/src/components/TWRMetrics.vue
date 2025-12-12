@@ -38,15 +38,6 @@
             {{ formatPnL(combinedMetrics[period.key]) }}
           </div>
         </div>
-
-        <div v-if="combinedMetrics[period.key]" class="metric-details">
-          <span class="detail-item">
-            Réalisé: ${{ formatNumber(combinedMetrics[period.key].realized_pnl) }}
-          </span>
-          <span class="detail-item">
-            Non-réalisé: ${{ formatNumber(combinedMetrics[period.key].unrealized_pnl) }}
-          </span>
-        </div>
       </div>
     </div>
 
@@ -84,9 +75,12 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePerformanceStore } from '@/stores/performance'
+import { useFormatting } from '@/composables/useFormatting'
 
 const performanceStore = usePerformanceStore()
 const { twrMetrics, pnlMetrics, combinedMetrics, trackingStats, loading, error, hasData, netCashFlow } = storeToRefs(performanceStore)
+
+const { formatNumber } = useFormatting()
 
 const periods = [
   { key: '7d', label: '7 jours' },
@@ -116,14 +110,6 @@ function formatPnL(metric) {
   const value = metric.total_pnl
   const sign = value >= 0 ? '+' : ''
   return `${sign}$${formatNumber(Math.abs(value))}`
-}
-
-function formatNumber(value) {
-  if (value === null || value === undefined) return '0'
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value)
 }
 
 function getCardClass(metric) {

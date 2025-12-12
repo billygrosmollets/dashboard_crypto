@@ -49,11 +49,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       totalValueUsd.value = data.total_value_usd || 0
       lastUpdated.value = data.last_updated
 
-      console.log('📊 Portfolio fetched:', {
-        total: totalValueUsd.value,
-        count: balances.value.length
-      })
-
     } catch (err) {
       error.value = err.message || 'Erreur lors du chargement du portfolio'
       console.error('Error fetching balances:', err)
@@ -69,8 +64,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     try {
       const data = await api.post('/portfolio/refresh')
 
-      console.log('🔄 Portfolio refreshed:', data.message)
-
       // Fetch updated balances after refresh
       await fetchBalances()
 
@@ -79,17 +72,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       console.error('Error refreshing portfolio:', err)
     } finally {
       loading.value = false
-    }
-  }
-
-  async function fetchTargetAllocations() {
-    try {
-      const data = await api.get('/rebalancing/allocation')
-      targetAllocations.value = data.allocations || {}
-    } catch (err) {
-      console.error('Error fetching target allocations:', err)
-      // Don't set error state, allocations are optional
-      targetAllocations.value = {}
     }
   }
 
@@ -110,7 +92,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
 
     // Actions
     fetchBalances,
-    refreshPortfolio,
-    fetchTargetAllocations
+    refreshPortfolio
   }
 })

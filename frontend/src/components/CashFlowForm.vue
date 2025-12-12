@@ -98,9 +98,12 @@
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePerformanceStore } from '@/stores/performance'
+import { useFormatting } from '@/composables/useFormatting'
 
 const performanceStore = usePerformanceStore()
 const { cashFlows } = storeToRefs(performanceStore)
+
+const { formatNumber, formatDate } = useFormatting()
 
 const formData = ref({
   type: 'DEPOSIT',
@@ -156,23 +159,6 @@ function resetForm() {
     description: ''
   }
   errorMessage.value = ''
-}
-
-function formatNumber(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value)
-}
-
-function formatDate(timestamp) {
-  return new Date(timestamp).toLocaleString('fr-FR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
 }
 </script>
 

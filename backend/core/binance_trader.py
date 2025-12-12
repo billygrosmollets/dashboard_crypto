@@ -32,9 +32,6 @@ class BinanceTrader:
         except Exception as e:
             logger.error(f"Erreur chargement exchange info: {e}")
 
-    def get_all_tradeable_assets(self):
-        return sorted(list(self.all_assets))
-
     def get_conversion_path(self, from_asset, to_asset):
         if from_asset == to_asset:
             return None
@@ -88,14 +85,6 @@ class BinanceTrader:
         except Exception as e:
             logger.error(f"Erreur calcul taux conversion {from_asset}->{to_asset}: {e}")
             return None
-
-    def test_connection(self):
-        try:
-            self.client.get_account()
-            return True
-        except Exception as e:
-            logger.error(f"Erreur connexion: {e}")
-            return False
 
     def get_all_balances_usd(self, min_value=300.0):
         account = self.client.get_account()

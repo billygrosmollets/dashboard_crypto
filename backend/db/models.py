@@ -110,34 +110,3 @@ class AllocationSettings(db.Model):
             'allocations': self.get_allocations(),
             'updated_at': self.updated_at.isoformat()
         }
-
-
-class ConversionHistory(db.Model):
-    """Conversion history model for tracking trades"""
-    __tablename__ = 'conversion_history'
-
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    from_asset = db.Column(db.String(20), nullable=False)
-    to_asset = db.Column(db.String(20), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    result_amount = db.Column(db.Float)
-    fee_usd = db.Column(db.Float)
-    conversion_type = db.Column(db.String(20))  # 'direct' or 'triangular'
-    status = db.Column(db.String(20))  # 'SUCCESS' or 'FAILED'
-    error_message = db.Column(db.Text)
-
-    def to_dict(self):
-        """Convert to dictionary for API response"""
-        return {
-            'id': self.id,
-            'timestamp': self.timestamp.isoformat(),
-            'from_asset': self.from_asset,
-            'to_asset': self.to_asset,
-            'amount': self.amount,
-            'result_amount': self.result_amount,
-            'fee_usd': self.fee_usd,
-            'conversion_type': self.conversion_type,
-            'status': self.status,
-            'error_message': self.error_message
-        }

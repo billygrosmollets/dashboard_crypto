@@ -30,17 +30,6 @@ export const usePerformanceStore = defineStore('performance', () => {
     '720d': null,
     'total': null
   })
-  const combinedMetrics = ref({
-    '7d': null,
-    '14d': null,
-    '30d': null,
-    '60d': null,
-    '90d': null,
-    '180d': null,
-    '360d': null,
-    '720d': null,
-    'total': null
-  })
   const trackingStats = ref({
     first_snapshot_date: null,
     last_snapshot_date: null,
@@ -62,9 +51,41 @@ export const usePerformanceStore = defineStore('performance', () => {
     return snapshots.value.length > 0
   })
 
-  const latestSnapshot = computed(() => {
-    if (snapshots.value.length === 0) return null
-    return snapshots.value[snapshots.value.length - 1]
+  const formattedLastSnapshot = computed(() => {
+    if (!trackingStats.value.last_snapshot_date) return 'Aucun snapshot'
+    const date = new Date(trackingStats.value.last_snapshot_date)
+    return date.toLocaleString('fr-FR')
+  })
+
+  const combinedMetrics = computed(() => {
+    const periods = ['7d', '14d', '30d', '60d', '90d', '180d', '360d', '720d', 'total']
+    const result = {}
+
+    periods.forEach(key => {
+      const twr = twrMetrics.value[key]
+      const pnl = pnlMetrics.value[key]
+
+      if (twr || pnl) {
+        result[key] = {
+          // TWR data
+          twr: twr?.twr,
+          twr_percent: twr?.twr_percent,
+          twr_annualized: twr?.twr_annualized,
+          twr_annualized_percent: twr?.twr_annualized_percent,
+
+          // P&L data
+          realized_pnl: pnl?.realized_pnl_usd || 0,
+          unrealized_pnl: pnl?.unrealized_pnl_usd || 0,
+          total_pnl: pnl?.total_pnl_usd || 0,
+          total_fees: pnl?.total_fees_usd || 0,
+          trade_count: pnl?.trade_count || 0
+        }
+      } else {
+        result[key] = null
+      }
+    })
+
+    return result
   })
 
   // Actions
@@ -87,26 +108,6 @@ export const usePerformanceStore = defineStore('performance', () => {
       throw err
     } finally {
       if (setLoading) loading.value = false
-    }
-  }
-
-  async function createSnapshot() {
-    try {
-      loading.value = true
-      error.value = null
-
-      const data = await api.post('/performance/snapshots')
-
-      // Refresh snapshots after creating a new one
-      await fetchSnapshots()
-
-      return data
-    } catch (err) {
-      error.value = err.message
-      console.error('Erreur lors de la création du snapshot:', err)
-      throw err
-    } finally {
-      loading.value = false
     }
   }
 
@@ -239,33 +240,6 @@ export const usePerformanceStore = defineStore('performance', () => {
     }
   }
 
-  function combineMetrics() {
-    // Combine TWR and P&L data
-    const periods = ['7d', '14d', '30d', '60d', '90d', '180d', '360d', '720d', 'total']
-
-    periods.forEach(key => {
-      const twr = twrMetrics.value[key]
-      const pnl = pnlMetrics.value[key]
-
-      if (twr || pnl) {
-        combinedMetrics.value[key] = {
-          // TWR data
-          twr: twr?.twr,
-          twr_percent: twr?.twr_percent,
-          twr_annualized: twr?.twr_annualized,
-          twr_annualized_percent: twr?.twr_annualized_percent,
-
-          // P&L data
-          realized_pnl: pnl?.realized_pnl_usd || 0,
-          unrealized_pnl: pnl?.unrealized_pnl_usd || 0,
-          total_pnl: pnl?.total_pnl_usd || 0,
-          total_fees: pnl?.total_fees_usd || 0,
-          trade_count: pnl?.trade_count || 0
-        }
-      }
-    })
-  }
-
   async function fetchStats(setLoading = true) {
     try {
       if (setLoading) loading.value = true
@@ -297,9 +271,6 @@ export const usePerformanceStore = defineStore('performance', () => {
         fetchAllTWR(false),
         fetchAllPnL(false)
       ])
-
-      // Combine TWR and P&L metrics
-      combineMetrics()
     } catch (err) {
       error.value = err.message
       console.error('Erreur lors du rafraîchissement des données:', err)
@@ -323,11 +294,10 @@ export const usePerformanceStore = defineStore('performance', () => {
     // Computed
     netCashFlow,
     hasData,
-    latestSnapshot,
+    formattedLastSnapshot,
 
     // Actions
     fetchSnapshots,
-    createSnapshot,
     fetchCashFlows,
     addCashFlow,
     fetchTWR,

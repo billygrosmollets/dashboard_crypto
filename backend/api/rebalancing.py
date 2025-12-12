@@ -8,13 +8,11 @@ from flask import Blueprint, jsonify, request
 from services.session_manager import session_manager
 from core.portfolio_manager import PortfolioManager
 from db.models import db, AllocationSettings
+from constants import STABLECOINS
 
 logger = logging.getLogger(__name__)
 
 rebalancing_bp = Blueprint('rebalancing', __name__)
-
-# Stablecoins list
-STABLECOINS = {'USDT', 'USDC', 'BUSD', 'FDUSD', 'DAI', 'TUSD'}
 
 
 @rebalancing_bp.route('/allocation', methods=['GET'])

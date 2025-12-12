@@ -62,6 +62,8 @@
 </template>
 
 <script setup>
+import { useFormatting } from '@/composables/useFormatting'
+
 defineProps({
   plan: {
     type: Object,
@@ -71,12 +73,7 @@ defineProps({
 
 defineEmits(['confirm', 'cancel'])
 
-function formatNumber(value) {
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(value)
-}
+const { formatNumber } = useFormatting()
 </script>
 
 <style scoped>

@@ -9,7 +9,9 @@ import threading
 import time
 from datetime import datetime
 from services.session_manager import session_manager
-from db.models import db, PortfolioBalance, Snapshot
+from db.models import db, PortfolioBalance
+from utils.portfolio_utils import refresh_portfolio_from_binance
+from core.performance_tracker import PerformanceTracker
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class AutoRefreshService:
         self.refresh_count = 0
         self.running = False
         self.thread = None
+        self.last_refresh_time = None
 
     def start(self):
         """Start the auto-refresh service in a background thread"""
@@ -72,88 +75,45 @@ class AutoRefreshService:
     def _refresh_portfolio(self):
         """Refresh portfolio from Binance API and update database"""
         try:
-            # Get trader instance
             trader = session_manager.get_trader()
+            fresh_balances, total_value_usd = refresh_portfolio_from_binance(trader, 5.0)
 
-            # Get fresh balances
-            fresh_balances = trader.get_all_balances_usd(5.0)
-
-            if not fresh_balances:
-                logger.warning("No balances found above $5 threshold")
-                return
-
-            # Calculate total
-            total_value_usd = sum(data['usd_value'] for data in fresh_balances.values())
-
-            # Update database cache
-            PortfolioBalance.query.delete()
-
-            for asset, data in fresh_balances.items():
-                percentage = (data['usd_value'] / total_value_usd * 100) if total_value_usd > 0 else 0
-
-                balance = PortfolioBalance(
-                    asset=asset,
-                    balance=data['balance'],
-                    free=data['free'],
-                    locked=data['locked'],
-                    usd_value=data['usd_value'],
-                    percentage=percentage,
-                    last_updated=datetime.utcnow()
-                )
-                db.session.add(balance)
-
-            db.session.commit()
-
-            # Increment refresh counter
+            # Update last refresh time
+            self.last_refresh_time = datetime.utcnow()
             self.refresh_count += 1
 
             # Take snapshot every snapshot_interval refreshes (e.g., every 120 refreshes = 2 hours)
             if self.refresh_count % self.snapshot_interval == 0:
-                self._take_snapshot(fresh_balances, total_value_usd)
+                self._take_snapshot()
 
             logger.info(f"📊 Auto-refresh #{self.refresh_count}: ${total_value_usd:.2f} ({len(fresh_balances)} assets)")
 
+        except ValueError as e:
+            logger.warning(str(e))
         except RuntimeError as e:
             logger.error(f"Session not initialized: {e}")
         except Exception as e:
             logger.error(f"Error refreshing portfolio: {e}")
             db.session.rollback()
 
-    def _take_snapshot(self, balances, total_value_usd):
+    def _take_snapshot(self):
         """
-        Take a snapshot of the current portfolio
+        Take a snapshot using the PerformanceTracker
         Matches the behavior of original app (snapshot every 2 hours)
-
-        Args:
-            balances: Fresh balances dict from Binance
-            total_value_usd: Total portfolio value
         """
         try:
-            # Compose snapshot data
-            composition = {}
-            for asset, data in balances.items():
-                if data['usd_value'] > 1.0:  # Only save significant positions
-                    composition[asset] = {
-                        'balance': data['balance'],
-                        'usd_value': data['usd_value'],
-                        'percentage': (data['usd_value'] / total_value_usd * 100) if total_value_usd > 0 else 0
-                    }
+            trader = session_manager.get_trader()
+            tracker = PerformanceTracker(trader)
 
-            # Create snapshot
-            snapshot = Snapshot(
-                timestamp=datetime.utcnow(),
-                total_value_usd=total_value_usd
-            )
-            snapshot.set_composition(composition)
+            success = tracker.save_current_snapshot()
 
-            db.session.add(snapshot)
-            db.session.commit()
-
-            logger.info(f"📸 Snapshot saved: ${total_value_usd:.2f} (refresh #{self.refresh_count})")
+            if success:
+                logger.info(f"📸 Snapshot saved (refresh #{self.refresh_count})")
+            else:
+                logger.warning("Snapshot creation returned False")
 
         except Exception as e:
             logger.error(f"Error taking snapshot: {e}")
-            db.session.rollback()
 
 
 # Global auto-refresh service instance

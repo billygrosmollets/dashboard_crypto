@@ -43,7 +43,6 @@
             <input
               type="text"
               v-model.number="editableTargets[balance.asset]"
-              @input="validateTotal"
               class="target-input"
               placeholder="0.0"
             />
@@ -65,10 +64,6 @@
           </button>
         </div>
       </div>
-    </div>
-
-    <div class="table-footer">
-      <span class="last-updated">Dernière mise à jour: {{ formattedLastUpdated }}</span>
     </div>
 
     <!-- Rebalancing Plan Modal -->
@@ -140,10 +135,6 @@ async function loadTargets() {
       editableTargets.value[balance.asset] = balance.percentage
     })
   }
-}
-
-function validateTotal() {
-  // Trigger reactivity
 }
 
 async function saveAndCalculate() {

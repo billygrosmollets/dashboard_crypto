@@ -26,8 +26,8 @@ class Config:
     BINANCE_TESTNET = os.environ.get('BINANCE_TESTNET', 'false').lower() == 'true'
 
     # Auto-refresh settings
-    AUTO_REFRESH_INTERVAL = 60  # seconds
-    SNAPSHOT_INTERVAL = 120  # refreshes (120 * 60s = 2 hours)
+    AUTO_REFRESH_INTERVAL = 10  # seconds
+    SNAPSHOT_INTERVAL = 60  # refreshes (60 * 10s = 10 minutes)
 
     # Portfolio settings
     MIN_BALANCE_USD = 5.0  # Minimum balance to display

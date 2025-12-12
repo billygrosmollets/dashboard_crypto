@@ -2,22 +2,7 @@
   <div class="twr-analytics-view">
     <div class="header">
       <h1>Performance Analytics</h1>
-      <div class="header-actions">
-        <button
-          @click="createManualSnapshot"
-          class="btn-snapshot"
-          :disabled="loading"
-        >
-          {{ loading ? 'Création...' : 'Créer un snapshot maintenant' }}
-        </button>
-        <button
-          @click="refreshData"
-          class="btn-refresh"
-          :disabled="loading"
-        >
-          {{ loading ? 'Chargement...' : 'Rafraîchir' }}
-        </button>
-      </div>
+      <span class="last-updated">Dernier snapshot: {{ performanceStore.formattedLastSnapshot }}</span>
     </div>
 
     <div v-if="loading && !hasData" class="loading-container">
@@ -35,13 +20,13 @@
         <CashFlowForm />
       </section>
 
-      <!-- Auto-refresh info -->
+      <!-- Info section -->
       <section class="section info-section">
         <div class="info-box">
           <h4>Information</h4>
           <p>
-            Les snapshots sont automatiquement créés toutes les 2 heures (120 refreshes de 60 secondes).
-            Vous pouvez aussi créer un snapshot manuellement à tout moment avec le bouton ci-dessus.
+            Les snapshots sont automatiquement créés toutes les 10 minutes par le backend.
+            Rafraîchissez la page (F5) pour voir les dernières données.
           </p>
           <p>
             Les cash flows (dépôts/retraits) permettent de calculer précisément votre performance
@@ -61,41 +46,15 @@
 import { onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePerformanceStore } from '@/stores/performance'
-import { usePolling } from '@/composables/usePolling'
 import TWRMetrics from '@/components/TWRMetrics.vue'
 import CashFlowForm from '@/components/CashFlowForm.vue'
 
 const performanceStore = usePerformanceStore()
 const { loading, hasData } = storeToRefs(performanceStore)
 
-// Refresh data every 2 minutes (performance data doesn't change as frequently as portfolio)
-usePolling(() => {
-  performanceStore.refreshAllData()
-}, 120000) // 2 minutes
-
 onMounted(() => {
   performanceStore.refreshAllData()
 })
-
-async function refreshData() {
-  try {
-    await performanceStore.refreshAllData()
-  } catch (error) {
-    console.error('Erreur lors du rafraîchissement:', error)
-  }
-}
-
-async function createManualSnapshot() {
-  try {
-    await performanceStore.createSnapshot()
-
-    // Refresh all data including TWR calculations
-    await performanceStore.refreshAllData()
-  } catch (error) {
-    console.error('Erreur lors de la création du snapshot:', error)
-    alert('Erreur lors de la création du snapshot: ' + error.message)
-  }
-}
 </script>
 
 <style scoped>
@@ -123,65 +82,10 @@ h1 {
   margin: 0;
 }
 
-.header-actions {
-  display: flex;
-  gap: 1rem;
-}
-
-button {
-  padding: 0.9rem 1.8rem;
-  border: none;
-  border-radius: 10px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-button::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-
-button:active::before {
-  width: 300px;
-  height: 300px;
-}
-
-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-snapshot {
-  background: linear-gradient(135deg, var(--info), #1976d2);
-  color: white;
-  box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
-}
-
-.btn-snapshot:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2, var(--info));
-}
-
-.btn-refresh {
-  background: linear-gradient(135deg, var(--gold-secondary), var(--gold-primary));
-  color: var(--bg-primary);
-  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
-  font-weight: 800;
-}
-
-.btn-refresh:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--gold-primary), var(--gold-dark));
+.last-updated {
+  font-size: 0.9rem;
+  color: var(--gray-500);
+  font-weight: 500;
 }
 
 .loading-container {
