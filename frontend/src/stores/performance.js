@@ -73,12 +73,13 @@ export const usePerformanceStore = defineStore('performance', () => {
           twr_annualized: twr?.twr_annualized,
           twr_annualized_percent: twr?.twr_annualized_percent,
 
-          // P&L data
-          realized_pnl: pnl?.realized_pnl_usd || 0,
-          unrealized_pnl: pnl?.unrealized_pnl_usd || 0,
-          total_pnl: pnl?.total_pnl_usd || 0,
-          total_fees: pnl?.total_fees_usd || 0,
-          trade_count: pnl?.trade_count || 0
+          // P&L data (using actual backend field names)
+          realized_pnl: pnl?.pnl_usd || 0,
+          unrealized_pnl: 0,  // Not tracked separately anymore
+          total_pnl: pnl?.pnl_usd || 0,
+          pnl_percent: pnl?.pnl_percent || 0,
+          invested_capital: pnl?.invested_capital || 0,
+          current_value: pnl?.current_value || 0
         }
       } else {
         result[key] = null

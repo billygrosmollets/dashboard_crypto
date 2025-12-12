@@ -59,7 +59,7 @@ onMounted(() => {
 
 <style scoped>
 .twr-analytics-view {
-  max-width: 1600px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
