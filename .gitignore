@@ -126,5 +126,5 @@ frontend/dist/
 frontend/.vite/
 node_modules/
 
-# Claude plans
-.claude/plans/
+# Claude Code
+.claude/
