@@ -192,10 +192,10 @@ def create_cash_flow():
 def get_twr(days):
     """
     GET /api/performance/twr/:days
-    Calculate TWR for a period (with caching)
+    Get cached TWR for a period (calculated automatically on each snapshot)
 
     Path:
-        days: Number of days (7, 30, 90, etc.)
+        days: Number of days (7, 30, 90, etc.) - 0 for total
 
     Returns:
         {
@@ -210,18 +210,14 @@ def get_twr(days):
     try:
         from services.portfolio_cache import portfolio_cache
 
-        # Get latest snapshot ID for cache invalidation
-        latest_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
-        snapshot_id = latest_snapshot.id if latest_snapshot else None
-
-        # Check cache first
+        # Get cached metrics (updated automatically on each snapshot)
         period_key = 'total' if days == 0 else f'{days}d'
-        cached_metrics = portfolio_cache.get_twr(period_key, snapshot_id)
+        cached_metrics = portfolio_cache.get_twr(period_key)
 
         if cached_metrics:
             return jsonify(cached_metrics), 200
 
-        # Cache miss - calculate
+        # Cache empty (e.g., just started) - calculate once
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
         metrics = tracker.calculate_performance_metrics(days)
@@ -241,7 +237,7 @@ def get_twr(days):
         metrics['end_date'] = metrics['end_date'].isoformat()
 
         # Cache the result
-        portfolio_cache.set_twr(period_key, metrics, snapshot_id)
+        portfolio_cache.set_twr(period_key, metrics)
 
         return jsonify(metrics), 200
 
@@ -249,7 +245,7 @@ def get_twr(days):
         logger.error(f"Session not initialized: {e}")
         return jsonify({'error': 'Binance session not initialized'}), 500
     except Exception as e:
-        logger.error(f"Error calculating TWR for {days} days: {e}")
+        logger.error(f"Error getting TWR for {days} days: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -257,7 +253,7 @@ def get_twr(days):
 def get_pnl(days):
     """
     GET /api/performance/pnl/:days
-    Calculate simple P&L for a period (with caching)
+    Get cached P&L for a period (calculated automatically on each snapshot)
 
     Formula: P&L = (Current Value - Initial Value) - Net Cash Flow
 
@@ -278,18 +274,14 @@ def get_pnl(days):
     try:
         from services.portfolio_cache import portfolio_cache
 
-        # Get latest snapshot ID for cache invalidation
-        latest_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
-        snapshot_id = latest_snapshot.id if latest_snapshot else None
-
-        # Check cache first
+        # Get cached P&L (updated automatically on each snapshot)
         period_key = 'total' if days == 0 else f'{days}d'
-        cached_pnl = portfolio_cache.get_pnl(period_key, snapshot_id)
+        cached_pnl = portfolio_cache.get_pnl(period_key)
 
         if cached_pnl:
             return jsonify(cached_pnl), 200
 
-        # Cache miss - calculate
+        # Cache empty (e.g., just started) - calculate once
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
 
@@ -303,7 +295,7 @@ def get_pnl(days):
         pnl['period_end'] = pnl['period_end'].isoformat()
 
         # Cache the result
-        portfolio_cache.set_pnl(period_key, pnl, snapshot_id)
+        portfolio_cache.set_pnl(period_key, pnl)
 
         return jsonify(pnl), 200
 
@@ -311,7 +303,7 @@ def get_pnl(days):
         logger.error(f"Session not initialized: {e}")
         return jsonify({'error': 'Binance session not initialized'}), 500
     except Exception as e:
-        logger.error(f"Error calculating P&L for {days} days: {e}")
+        logger.error(f"Error getting P&L for {days} days: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -330,7 +322,7 @@ def get_stats():
             total_withdrawals_usd: float,
             first_snapshot_date: str,
             last_snapshot_date: str,
-            latest_snapshot_id: int (for cache invalidation)
+            latest_snapshot_id: int
         }
     """
     try:
@@ -359,7 +351,7 @@ def get_stats():
             'total_withdrawals_usd': total_withdrawals,
             'first_snapshot_date': stats['first_snapshot'].isoformat() if stats['first_snapshot'] else None,
             'last_snapshot_date': stats['last_snapshot'].isoformat() if stats['last_snapshot'] else None,
-            'latest_snapshot_id': latest_snapshot.id if latest_snapshot else None  # For cache invalidation
+            'latest_snapshot_id': latest_snapshot.id if latest_snapshot else None  # For reference
         }
 
         return jsonify(result), 200

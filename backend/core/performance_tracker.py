@@ -23,7 +23,8 @@ class PerformanceTracker:
     def save_current_snapshot(self):
         """
         Save a snapshot of the current portfolio
-        Called by auto-refresh service every 2 hours
+        Called by auto-refresh service every 10 minutes
+        Automatically calculates and caches TWR/P&L for all periods
         """
         try:
             balances = self.trader.get_all_balances_usd(1.0)
@@ -54,12 +55,65 @@ class PerformanceTracker:
             db.session.commit()
 
             logger.info(f"📸 Snapshot saved: ${total_value:.2f}")
+
+            # Calculate and cache performance metrics for all periods
+            self._update_performance_cache()
+
             return True
 
         except Exception as e:
             logger.error(f"Error saving snapshot: {e}")
             db.session.rollback()
             return False
+
+    def _update_performance_cache(self):
+        """
+        Calculate and cache TWR/P&L for all standard periods
+        Called automatically after each snapshot
+        """
+        from services.portfolio_cache import portfolio_cache
+
+        periods = [
+            ('7d', 7),
+            ('14d', 14),
+            ('30d', 30),
+            ('60d', 60),
+            ('90d', 90),
+            ('180d', 180),
+            ('365d', 365),
+            ('730d', 730),
+            ('total', 0)
+        ]
+
+        for period_key, days in periods:
+            try:
+                # Calculate TWR
+                twr_metrics = self.calculate_performance_metrics(days)
+                if twr_metrics and twr_metrics['twr'] is not None:
+                    # Add percentage representation
+                    twr_metrics['twr_percent'] = twr_metrics['twr'] * 100
+                    twr_metrics['twr_annualized_percent'] = twr_metrics['twr_annualized'] * 100 if twr_metrics['twr_annualized'] is not None else None
+                    # Convert dates to ISO format
+                    twr_metrics['start_date'] = twr_metrics['start_date'].isoformat()
+                    twr_metrics['end_date'] = twr_metrics['end_date'].isoformat()
+                    # Cache it
+                    portfolio_cache.set_twr(period_key, twr_metrics)
+                    logger.debug(f"✅ TWR cached for {period_key}")
+
+                # Calculate P&L
+                pnl_metrics = self.calculate_simple_pnl(days=None if days == 0 else days)
+                if pnl_metrics:
+                    # Convert dates to ISO format
+                    pnl_metrics['period_start'] = pnl_metrics['period_start'].isoformat()
+                    pnl_metrics['period_end'] = pnl_metrics['period_end'].isoformat()
+                    # Cache it
+                    portfolio_cache.set_pnl(period_key, pnl_metrics)
+                    logger.debug(f"✅ P&L cached for {period_key}")
+
+            except Exception as e:
+                logger.warning(f"Could not cache metrics for {period_key}: {e}")
+
+        logger.info("📊 Performance cache updated for all periods")
 
     def get_tracking_stats(self):
         """Get tracking statistics (days, snapshot count, etc.)"""
@@ -209,10 +263,19 @@ class PerformanceTracker:
             # Calculate TWR for the portfolio
             twr = self.calculate_twr(start_date, end_date)
 
+            # Calculate annualized TWR
+            twr_annualized = ((1 + twr) ** (365 / actual_days) - 1) if twr is not None and actual_days > 0 and actual_days <= 365 else None
+
+            # Log the result
+            if twr is not None:
+                period_label = 'total' if days == 0 else f'{days}d'
+                twr_percent = twr * 100
+                logger.info(f"📊 TWR {period_label}: {twr_percent:+.2f}%")
+
             return {
                 'period_days': actual_days,
                 'twr': twr,
-                'twr_annualized': ((1 + twr) ** (365 / actual_days) - 1) if twr is not None and actual_days > 0 and actual_days <= 365 else None,
+                'twr_annualized': twr_annualized,
                 'start_date': start_date,
                 'end_date': end_date,
                 'start_value': first_snapshot.total_value_usd if days == 0 else None,
@@ -313,7 +376,9 @@ class PerformanceTracker:
             # P&L percentage
             pnl_percent = (pnl_usd / invested_capital * 100) if invested_capital > 0 else 0
 
-            logger.info(f"📊 P&L {actual_days}d: ${pnl_usd:+.2f} ({pnl_percent:+.2f}%)")
+            # Log the result
+            period_label = 'total' if (days is None or days == 0) else f'{days}d'
+            logger.info(f"📊 P&L {period_label}: ${pnl_usd:+.2f}")
 
             return {
                 'pnl_usd': pnl_usd,

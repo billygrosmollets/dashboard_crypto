@@ -1,0 +1,45 @@
+# ==========================================
+# Dockerfile for Flask Backend (Production)
+# ==========================================
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements files
+COPY backend/requirements.txt requirements.txt
+COPY backend/requirements-prod.txt requirements-prod.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-prod.txt
+
+# Copy backend code
+COPY backend/ /app/
+
+# Create data directory for SQLite persistence
+RUN mkdir -p /app/data
+
+# Expose port 5000
+EXPOSE 5000
+
+# Run with Gunicorn (WSGI production server)
+# - bind to 0.0.0.0:5000
+# - 4 worker processes
+# - worker class: gevent (async)
+# - 120 second timeout for long-running requests
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:5000", \
+     "--workers", "4", \
+     "--worker-class", "gevent", \
+     "--timeout", "120", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "wsgi:app"]

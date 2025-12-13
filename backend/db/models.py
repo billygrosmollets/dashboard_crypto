@@ -60,33 +60,6 @@ class CashFlow(db.Model):
             'created_at': self.created_at.isoformat()
         }
 
-
-class PortfolioBalance(db.Model):
-    """Portfolio balance cache model"""
-    __tablename__ = 'portfolio_balances'
-
-    id = db.Column(db.Integer, primary_key=True)
-    asset = db.Column(db.String(20), unique=True, nullable=False, index=True)
-    balance = db.Column(db.Float, nullable=False)
-    free = db.Column(db.Float, nullable=False)
-    locked = db.Column(db.Float, nullable=False)
-    usd_value = db.Column(db.Float, nullable=False)
-    percentage = db.Column(db.Float, nullable=False)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        """Convert to dictionary for API response"""
-        return {
-            'asset': self.asset,
-            'balance': self.balance,
-            'free': self.free,
-            'locked': self.locked,
-            'usd_value': self.usd_value,
-            'percentage': self.percentage,
-            'last_updated': self.last_updated.isoformat()
-        }
-
-
 class AllocationSettings(db.Model):
     """Allocation settings model (per-asset allocation)"""
     __tablename__ = 'allocation_settings'

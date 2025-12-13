@@ -16,7 +16,8 @@ class PortfolioCache:
 
     This cache stores:
     - Current portfolio balances (refreshed every 10s by auto-refresh)
-    - TWR calculation results (invalidated when new snapshot created)
+    - TWR calculation results (updated automatically when new snapshot created)
+    - P&L calculation results (updated automatically when new snapshot created)
     """
 
     def __init__(self):
@@ -27,11 +28,9 @@ class PortfolioCache:
 
         # TWR metrics cache
         self._twr_cache = {}  # {period: metrics_dict}
-        self._twr_snapshot_id = None  # For invalidation
 
         # PnL metrics cache
         self._pnl_cache = {}  # {period: pnl_dict}
-        self._pnl_snapshot_id = None  # For invalidation
 
         # Thread safety
         self._lock = Lock()
@@ -87,84 +86,62 @@ class PortfolioCache:
 
     # ========== TWR Cache Methods ==========
 
-    def get_twr(self, period, current_snapshot_id):
+    def get_twr(self, period):
         """
         Get cached TWR metrics for a period
 
         Args:
             period: Period key (e.g., '7d', '30d', 'total')
-            current_snapshot_id: Latest snapshot ID for cache invalidation
 
         Returns:
-            dict or None: Cached TWR metrics if valid, None otherwise
+            dict or None: Cached TWR metrics if available, None otherwise
         """
         with self._lock:
-            # Check if cache needs invalidation
-            if current_snapshot_id != self._twr_snapshot_id:
-                logger.info(f"🔄 TWR cache invalidated (snapshot {self._twr_snapshot_id} → {current_snapshot_id})")
-                self._twr_cache = {}
-                self._twr_snapshot_id = current_snapshot_id
-                return None
-
-            # Return cached value if exists
             cached_value = self._twr_cache.get(period)
             if cached_value:
                 logger.debug(f"📦 TWR cache hit for {period}")
             return cached_value
 
-    def set_twr(self, period, metrics, current_snapshot_id):
+    def set_twr(self, period, metrics):
         """
         Cache TWR metrics for a period
 
         Args:
             period: Period key (e.g., '7d', '30d', 'total')
             metrics: TWR metrics dict
-            current_snapshot_id: Latest snapshot ID
         """
         with self._lock:
             self._twr_cache[period] = metrics
-            self._twr_snapshot_id = current_snapshot_id
             logger.debug(f"💾 TWR cached for {period}")
 
     # ========== PnL Cache Methods ==========
 
-    def get_pnl(self, period, current_snapshot_id):
+    def get_pnl(self, period):
         """
         Get cached P&L metrics for a period
 
         Args:
             period: Period key (e.g., '7d', '30d', 'total')
-            current_snapshot_id: Latest snapshot ID for cache invalidation
 
         Returns:
-            dict or None: Cached P&L metrics if valid, None otherwise
+            dict or None: Cached P&L metrics if available, None otherwise
         """
         with self._lock:
-            # Check if cache needs invalidation
-            if current_snapshot_id != self._pnl_snapshot_id:
-                logger.info(f"🔄 P&L cache invalidated (snapshot {self._pnl_snapshot_id} → {current_snapshot_id})")
-                self._pnl_cache = {}
-                self._pnl_snapshot_id = current_snapshot_id
-                return None
-
-            # Return cached value if exists
             cached_value = self._pnl_cache.get(period)
             if cached_value:
                 logger.debug(f"📦 P&L cache hit for {period}")
             return cached_value
 
-    def set_pnl(self, period, metrics, current_snapshot_id):
+    def set_pnl(self, period, metrics):
         """
         Cache P&L metrics for a period
 
         Args:
             period: Period key (e.g., '7d', '30d', 'total')
             metrics: P&L metrics dict
-            current_snapshot_id: Latest snapshot ID
         """
         with self._lock:
             self._pnl_cache[period] = metrics
-            self._pnl_snapshot_id = current_snapshot_id
             logger.debug(f"💾 P&L cached for {period}")
 
     # ========== Utility Methods ==========
@@ -176,9 +153,7 @@ class PortfolioCache:
             self._total_value_usd = 0.0
             self._balances_last_updated = None
             self._twr_cache = {}
-            self._twr_snapshot_id = None
             self._pnl_cache = {}
-            self._pnl_snapshot_id = None
             logger.info("🗑️ All caches cleared")
 
 

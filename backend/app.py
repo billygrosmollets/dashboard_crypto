@@ -3,6 +3,8 @@
 Flask Application Factory
 Main entry point for the Binance Portfolio Manager backend
 """
+
+import os
 import logging
 from flask import Flask
 from flask_cors import CORS
@@ -44,10 +46,9 @@ def create_app(config_name='development'):
         db.create_all()
         logger.info("✅ Database initialized")
 
-    # Initialize Binance session
-    api_key = app.config.get('BINANCE_API_KEY')
-    api_secret = app.config.get('BINANCE_API_SECRET')
-    testnet = app.config.get('BINANCE_TESTNET', False)
+    api_key = os.environ.get('BINANCE_API_KEY') or app.config.get('BINANCE_API_KEY')
+    api_secret = os.environ.get('BINANCE_API_SECRET') or app.config.get('BINANCE_API_SECRET')
+    testnet = os.environ.get('BINANCE_TESTNET', 'False').lower() == 'true' or app.config.get('BINANCE_TESTNET', False)
 
     if api_key and api_secret:
         session_manager.initialize(api_key, api_secret, testnet)
@@ -56,14 +57,20 @@ def create_app(config_name='development'):
         logger.warning("⚠️  Binance API credentials not found in configuration")
 
     # Enable CORS for Vue.js frontend
+    # Allow origins from environment variable (comma-separated)
+    allowed_origins = os.environ.get(
+        'ALLOWED_ORIGINS',
+        'http://localhost:5173,http://localhost:3000,http://localhost'
+    ).split(',')
+
     CORS(app, resources={
         r"/api/*": {
-            "origins": ["http://localhost:5173", "http://localhost:3000"],  # Vite default port
+            "origins": allowed_origins,
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"]
         }
     })
-    logger.info("✅ CORS configured")
+    logger.info(f"✅ CORS configured for origins: {', '.join(allowed_origins)}")
 
     # Register API blueprints
     from api.portfolio import portfolio_bp
@@ -86,17 +93,22 @@ def create_app(config_name='development'):
             'trader_initialized': session_manager.is_initialized()
         }
 
-    # Start auto-refresh service (must be after app creation)
-    from services.auto_refresh import start_auto_refresh
-    start_auto_refresh(app)
-    logger.info("✅ Auto-refresh service started")
-
     logger.info("🚀 Flask application created successfully")
     return app
 
 
 if __name__ == '__main__':
     app = create_app('development')
+
+    # Start auto-refresh ONLY in main process (not in reloader)
+    # When debug=True, Flask spawns 2 processes:
+    #   1. Reloader process (WERKZEUG_RUN_MAIN not set)
+    #   2. Main process (WERKZEUG_RUN_MAIN='true')
+    # We only want auto-refresh in the main process
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        from services.auto_refresh import start_auto_refresh
+        start_auto_refresh(app)
+        logger.info("✅ Auto-refresh service started")
 
     logger.info("=" * 60)
     logger.info("🚀 Starting Binance Portfolio Manager Backend")

@@ -27,7 +27,7 @@ class Config:
 
     # Auto-refresh settings
     AUTO_REFRESH_INTERVAL = 10  # seconds
-    SNAPSHOT_INTERVAL = 60  # refreshes (60 * 10s = 10 minutes)
+    SNAPSHOT_INTERVAL = 2  # refreshes (360 * 10s = 60 minutes)
 
     # Portfolio settings
     MIN_BALANCE_USD = 5.0  # Minimum balance to display

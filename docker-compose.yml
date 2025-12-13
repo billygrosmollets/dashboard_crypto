@@ -1,0 +1,90 @@
+# ================================================
+# Docker Compose Configuration
+# Production deployment for Crypto Portfolio Dashboard
+# ================================================
+
+version: '3.8'
+
+services:
+  # ========================================
+  # Backend Service (Flask + Gunicorn)
+  # ========================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: portfolio-backend
+    restart: always
+
+    # Environment variables from .env file
+    env_file:
+      - .env
+
+    # Persistent volume for SQLite database
+    volumes:
+      - ./data:/app/data
+
+    # Expose port (internal only, not published)
+    expose:
+      - "5000"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - portfolio-network
+
+  # ========================================
+  # Frontend Service (Nginx + Vue.js)
+  # ========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: portfolio-frontend
+    restart: always
+
+    # Published port - accessible from host
+    ports:
+      - "80:80"
+
+    # Depends on backend being ready
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - portfolio-network
+
+# ========================================
+# Networks
+# ========================================
+networks:
+  portfolio-network:
+    driver: bridge
+
+# ========================================
+# Volumes
+# ========================================
+volumes:
+  data:
+    driver: local

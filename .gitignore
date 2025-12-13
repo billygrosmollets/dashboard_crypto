@@ -105,3 +105,26 @@ tmp/
 portfolio_config.json
 user_settings.json
 balances_backup.json
+
+# ============================================================================
+# PRODUCTION DEPLOYMENT
+# ============================================================================
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+portfolio.db
+data/
+
+# Docker
+.dockerignore
+
+# Node.js (Frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+node_modules/
+
+# Claude plans
+.claude/plans/

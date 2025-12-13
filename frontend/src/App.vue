@@ -40,8 +40,8 @@ const isConnected = ref(false)
 // Check connection status on mount
 onMounted(async () => {
   try {
-    const response = await axios.get('/api/portfolio/connection/test')
-    isConnected.value = response.data.connected
+    const response = await axios.get('/health')
+    isConnected.value = response.data.trader_initialized === true
   } catch (error) {
     console.error('Connection test failed:', error)
     isConnected.value = false
