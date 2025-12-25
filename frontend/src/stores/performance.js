@@ -13,22 +13,16 @@ export const usePerformanceStore = defineStore('performance', () => {
     '14d': null,
     '30d': null,
     '60d': null,
-    '90d': null,
     '180d': null,
-    '360d': null,
-    '720d': null,
-    'total': null
+    '365d': null
   })
   const pnlMetrics = ref({
     '7d': null,
     '14d': null,
     '30d': null,
     '60d': null,
-    '90d': null,
     '180d': null,
-    '360d': null,
-    '720d': null,
-    'total': null
+    '365d': null
   })
   const trackingStats = ref({
     first_snapshot_date: null,
@@ -58,7 +52,7 @@ export const usePerformanceStore = defineStore('performance', () => {
   })
 
   const combinedMetrics = computed(() => {
-    const periods = ['7d', '14d', '30d', '60d', '90d', '180d', '360d', '720d', 'total']
+    const periods = ['7d', '14d', '30d', '60d', '180d', '365d']
     const result = {}
 
     periods.forEach(key => {
@@ -134,15 +128,14 @@ export const usePerformanceStore = defineStore('performance', () => {
     }
   }
 
-  async function addCashFlow(type, amountUsd, description = '') {
+  async function addCashFlow(type, amountUsd) {
     try {
       loading.value = true
       error.value = null
 
       const data = await api.post('/performance/cashflows', {
         type,
-        amount_usd: amountUsd,
-        description
+        amount_usd: amountUsd
       })
 
       // Refresh cash flows and stats after adding
@@ -206,7 +199,7 @@ export const usePerformanceStore = defineStore('performance', () => {
       if (setLoading) loading.value = true
       error.value = null
 
-      const periods = [7, 14, 30, 60, 90, 180, 360, 720, 0] // 0 = total
+      const periods = [7, 14, 30, 60, 180, 365]
 
       // Fetch all TWR metrics in parallel without individual loading states
       await Promise.all(
@@ -226,7 +219,7 @@ export const usePerformanceStore = defineStore('performance', () => {
       if (setLoading) loading.value = true
       error.value = null
 
-      const periods = [7, 14, 30, 60, 90, 180, 360, 720, 0] // 0 = total
+      const periods = [7, 14, 30, 60, 180, 365]
 
       // Fetch all P&L metrics in parallel without individual loading states
       await Promise.all(

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
 Portfolio API endpoints
-Handles portfolio balance fetching and refresh operations
+Handles portfolio balance fetching from database
 """
 import logging
+from datetime import datetime
 from flask import Blueprint, jsonify, request
-from services.session_manager import session_manager
-from services.portfolio_cache import portfolio_cache
-from utils.portfolio_utils import refresh_portfolio_from_binance
+from db.models import LastBalance
 
 logger = logging.getLogger(__name__)
 
@@ -18,33 +17,64 @@ portfolio_bp = Blueprint('portfolio', __name__)
 def get_balances():
     """
     GET /api/portfolio/balances
-    Get cached portfolio balances from in-memory cache
+    Get portfolio balances from last_balance table
 
     Returns:
         {
             total_value_usd: float,
             balances: [
-                {asset, balance, free, locked, usd_value, percentage},
+                {asset, balance, usd_value, percentage},
                 ...
             ],
-            last_updated: timestamp
+            timestamp: timestamp,
+            count: int
         }
     """
     try:
-        # Check if cache is empty (e.g., just started)
-        if portfolio_cache.is_balances_empty():
-            logger.info("Cache empty, forcing refresh...")
-            trader = session_manager.get_trader()
-            refresh_portfolio_from_binance(trader, 5.0)
+        # Get balances from last_balance table
+        last_balances = LastBalance.query.order_by(LastBalance.usd_value.desc()).all()
 
-        # Get balances from in-memory cache
-        cache_data = portfolio_cache.get_balances()
+        if not last_balances:
+            return jsonify({
+                'total_value_usd': 0,
+                'balances': [],
+                'last_updated': None,
+                'count': 0
+            }), 200
 
-        # Sort by USD value (descending)
-        cache_data['balances'].sort(key=lambda x: x['usd_value'], reverse=True)
-        cache_data['count'] = len(cache_data['balances'])
+        # Calculate total
+        total_value_usd = sum(lb.usd_value for lb in last_balances)
 
-        return jsonify(cache_data), 200
+        # Format response
+        balances = [
+            {
+                'asset': lb.asset,
+                'balance': lb.balance,
+                'usd_value': lb.usd_value,
+                'percentage': lb.percentage
+            }
+            for lb in last_balances
+        ]
+
+        # Use the most recent timestamp (INTEGER format YYYYMMDDHHmm)
+        timestamp_int = max(lb.timestamp for lb in last_balances)
+
+        # Convert to ISO format
+        timestamp_str = str(timestamp_int)
+        dt = datetime(
+            year=int(timestamp_str[0:4]),
+            month=int(timestamp_str[4:6]),
+            day=int(timestamp_str[6:8]),
+            hour=int(timestamp_str[8:10]),
+            minute=int(timestamp_str[10:12])
+        )
+
+        return jsonify({
+            'total_value_usd': total_value_usd,
+            'balances': balances,
+            'timestamp': dt.isoformat(),
+            'count': len(balances)
+        }), 200
 
     except Exception as e:
         logger.error(f"Error fetching balances: {e}")
@@ -55,7 +85,8 @@ def get_balances():
 def refresh_portfolio():
     """
     POST /api/portfolio/refresh
-    Force refresh portfolio from Binance API and update database cache
+    Get fresh balances from last_balance table
+    (Actual refresh happens in background via auto_refresh service)
 
     Returns:
         {
@@ -65,26 +96,24 @@ def refresh_portfolio():
         }
     """
     try:
-        trader = session_manager.get_trader()
-        min_value = request.json.get('min_value', 5.0) if request.is_json else 5.0
+        # Simply read from last_balance table
+        last_balances = LastBalance.query.all()
 
-        fresh_balances, total_value_usd = refresh_portfolio_from_binance(trader, min_value)
+        if not last_balances:
+            return jsonify({
+                'message': 'No balances available',
+                'total_value_usd': 0,
+                'balances_count': 0
+            }), 200
+
+        total_value_usd = sum(lb.usd_value for lb in last_balances)
 
         return jsonify({
-            'message': 'Portfolio refreshed successfully',
+            'message': 'Balances retrieved from database',
             'total_value_usd': total_value_usd,
-            'balances_count': len(fresh_balances)
+            'balances_count': len(last_balances)
         }), 200
 
-    except ValueError as e:
-        return jsonify({
-            'message': str(e),
-            'total_value_usd': 0,
-            'balances_count': 0
-        }), 200
-    except RuntimeError as e:
-        logger.error(f"Session not initialized: {e}")
-        return jsonify({'error': 'Binance session not initialized'}), 500
     except Exception as e:
         logger.error(f"Error refreshing portfolio: {e}")
         return jsonify({'error': str(e)}), 500

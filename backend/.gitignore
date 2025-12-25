@@ -13,7 +13,6 @@ instance/
 .webassets-cache
 
 # Database
-*.db
 *.sqlite
 *.sqlite3
 

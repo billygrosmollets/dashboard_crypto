@@ -15,7 +15,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   const lastUpdated = ref(null)
   const loading = ref(false)
   const error = ref(null)
-  const targetAllocations = ref({})
 
   // Computed
   const sortedBalances = computed(() => {
@@ -47,7 +46,7 @@ export const usePortfolioStore = defineStore('portfolio', () => {
 
       balances.value = data.balances || []
       totalValueUsd.value = data.total_value_usd || 0
-      lastUpdated.value = data.last_updated
+      lastUpdated.value = data.timestamp
 
     } catch (err) {
       error.value = err.message || 'Erreur lors du chargement du portfolio'
@@ -82,7 +81,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     lastUpdated,
     loading,
     error,
-    targetAllocations,
 
     // Computed
     sortedBalances,

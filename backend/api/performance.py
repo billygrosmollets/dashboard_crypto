@@ -57,16 +57,33 @@ def get_snapshots():
 def create_snapshot():
     """
     POST /api/performance/snapshots
-    Create a manual snapshot of current portfolio
+    Create a manual snapshot from last_balance table
 
     Returns:
         {message: str, snapshot: {...}}
     """
     try:
+        from db.models import LastBalance
+
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
 
-        success = tracker.save_current_snapshot()
+        # Get balances from last_balance table
+        last_balances = LastBalance.query.all()
+
+        if not last_balances:
+            return jsonify({'error': 'No balances available in last_balance table'}), 400
+
+        # Convert to format expected by tracker
+        balances = {
+            lb.asset: {
+                'balance': lb.balance,
+                'usd_value': lb.usd_value
+            }
+            for lb in last_balances
+        }
+
+        success = tracker.save_current_snapshot(balances=balances)
 
         if success:
             # Get the latest snapshot
@@ -138,7 +155,7 @@ def create_cash_flow():
     Add a cash flow (deposit or withdrawal)
 
     Request Body:
-        {amount_usd: float, type: str, description: str}
+        {amount_usd: float, type: str}
 
     Returns:
         {message: str, cashflow: {...}}
@@ -152,7 +169,6 @@ def create_cash_flow():
 
         amount_usd = float(data['amount_usd'])
         cf_type = data['type']
-        description = data.get('description', '')
 
         # Validate type
         if cf_type not in ['DEPOSIT', 'WITHDRAW']:
@@ -162,18 +178,19 @@ def create_cash_flow():
         if cf_type == 'WITHDRAW' and amount_usd > 0:
             amount_usd = -amount_usd
 
-        # Create cash flow
+        # Create cash flow with INTEGER timestamp
+        timestamp_int = int(datetime.utcnow().strftime('%Y%m%d%H%M'))
+
         cash_flow = CashFlow(
-            timestamp=datetime.utcnow(),
-            amount_usd=amount_usd,
-            type=cf_type,
-            description=description
+            timestamp=timestamp_int,
+            amount_usd=int(amount_usd),
+            type=cf_type
         )
 
         db.session.add(cash_flow)
         db.session.commit()
 
-        logger.info(f"💰 Cash flow created: {cf_type} {amount_usd:+.2f}€")
+        logger.info(f"ðŸ’° Cash flow created: {cf_type} {amount_usd:+.2f}â‚¬")
 
         return jsonify({
             'message': 'Cash flow created successfully',
@@ -192,7 +209,7 @@ def create_cash_flow():
 def get_twr(days):
     """
     GET /api/performance/twr/:days
-    Get cached TWR for a period (calculated automatically on each snapshot)
+    Calculate TWR for a period from database
 
     Path:
         days: Number of days (7, 30, 90, etc.) - 0 for total
@@ -208,16 +225,6 @@ def get_twr(days):
         }
     """
     try:
-        from services.portfolio_cache import portfolio_cache
-
-        # Get cached metrics (updated automatically on each snapshot)
-        period_key = 'total' if days == 0 else f'{days}d'
-        cached_metrics = portfolio_cache.get_twr(period_key)
-
-        if cached_metrics:
-            return jsonify(cached_metrics), 200
-
-        # Cache empty (e.g., just started) - calculate once
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
         metrics = tracker.calculate_performance_metrics(days)
@@ -236,9 +243,6 @@ def get_twr(days):
         metrics['start_date'] = metrics['start_date'].isoformat()
         metrics['end_date'] = metrics['end_date'].isoformat()
 
-        # Cache the result
-        portfolio_cache.set_twr(period_key, metrics)
-
         return jsonify(metrics), 200
 
     except RuntimeError as e:
@@ -253,7 +257,7 @@ def get_twr(days):
 def get_pnl(days):
     """
     GET /api/performance/pnl/:days
-    Get cached P&L for a period (calculated automatically on each snapshot)
+    Calculate P&L for a period from database
 
     Formula: P&L = (Current Value - Initial Value) - Net Cash Flow
 
@@ -272,16 +276,6 @@ def get_pnl(days):
         }
     """
     try:
-        from services.portfolio_cache import portfolio_cache
-
-        # Get cached P&L (updated automatically on each snapshot)
-        period_key = 'total' if days == 0 else f'{days}d'
-        cached_pnl = portfolio_cache.get_pnl(period_key)
-
-        if cached_pnl:
-            return jsonify(cached_pnl), 200
-
-        # Cache empty (e.g., just started) - calculate once
         trader = session_manager.get_trader()
         tracker = PerformanceTracker(trader)
 
@@ -293,9 +287,6 @@ def get_pnl(days):
         # Format dates for JSON
         pnl['period_start'] = pnl['period_start'].isoformat()
         pnl['period_end'] = pnl['period_end'].isoformat()
-
-        # Cache the result
-        portfolio_cache.set_pnl(period_key, pnl)
 
         return jsonify(pnl), 200
 
@@ -362,3 +353,61 @@ def get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@performance_bp.route('/twr-history', methods=['GET'])
+def get_twr_history():
+    """
+    GET /api/performance/twr-history?days=30
+    Get TWR evolution over time for charting
+    """
+    try:
+        days = int(request.args.get('days', 30))
+        
+        # Calculate date range: from (now - days) to now
+        end_date = datetime.utcnow()
+        
+        if days == 0:
+            # All time - get first snapshot date
+            first_snapshot = Snapshot.query.order_by(Snapshot.timestamp).first()
+            if first_snapshot:
+                # Convertir INTEGER en datetime
+                timestamp_str = str(first_snapshot.timestamp)
+                start_date = datetime.strptime(timestamp_str, '%Y%m%d%H%M')
+            else:
+                start_date = end_date
+        else:
+            start_date = end_date - timedelta(days=days)
+        
+        # Convertir en INTEGER pour la requête SQL
+        start_ts = int(start_date.strftime('%Y%m%d%H%M'))
+        end_ts = int(end_date.strftime('%Y%m%d%H%M'))
+        
+        # Get snapshots in period (SANS le filtre twr.isnot(None))
+        snapshots = Snapshot.query\
+            .filter(Snapshot.timestamp >= start_ts)\
+            .filter(Snapshot.timestamp <= end_ts)\
+            .order_by(Snapshot.timestamp)\
+            .all()
+        
+        if not snapshots:
+            return jsonify([]), 200
+        
+        # Format for Chart.js
+        result = []
+        for snapshot in snapshots:
+            # Convertir INTEGER timestamp en datetime pour ISO format
+            timestamp_str = str(snapshot.timestamp)
+            snapshot_dt = datetime.strptime(timestamp_str, '%Y%m%d%H%M')
+            
+            result.append({
+                'x': snapshot_dt.isoformat(),
+                'y': round(snapshot.twr, 2) if snapshot.twr is not None else 0.0
+            })
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting TWR history: {e}")
+        return jsonify({'error': str(e)}), 500
+

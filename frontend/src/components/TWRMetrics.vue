@@ -89,8 +89,7 @@ const periods = [
   { key: '60d', label: '60 jours' },
   { key: '90d', label: '90 jours' },
   { key: '180d', label: '180 jours' },
-  { key: '360d', label: '1 an' },
-  { key: '720d', label: '2 ans' },
+  { key: '365d', label: '1 an' },
   { key: 'total', label: 'Total' }
 ]
 
@@ -108,8 +107,12 @@ function formatPnL(metric) {
     return 'N/A'
   }
   const value = metric.total_pnl
-  const sign = value >= 0 ? '+' : ''
-  return `${sign}$${formatNumber(Math.abs(value))}`
+  const percent = metric.pnl_percent
+  const sign = value >= 0 ? '+' : '-'
+  const percentSign = percent >= 0 ? '+' : ''
+
+  // Format: +$1,250 (+8.5%) or -$1,250 (-8.5%)
+  return `${sign}$${formatNumber(Math.abs(value))} (${percentSign}${percent.toFixed(2)}%)`
 }
 
 function getCardClass(metric) {

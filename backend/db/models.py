@@ -4,82 +4,101 @@ SQLAlchemy models for portfolio database
 """
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import json
 
 db = SQLAlchemy()
 
 
 class Snapshot(db.Model):
-    """Portfolio snapshot model (replaces snapshots.json)"""
+    """Portfolio snapshot model"""
     __tablename__ = 'snapshots'
 
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False, index=True)
-    total_value_usd = db.Column(db.Float, nullable=False)
-    composition = db.Column(db.Text, nullable=False)  # JSON string
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def get_composition(self):
-        """Parse composition JSON string to dict"""
-        return json.loads(self.composition) if self.composition else {}
-
-    def set_composition(self, comp_dict):
-        """Set composition from dict"""
-        self.composition = json.dumps(comp_dict)
+    timestamp = db.Column(db.Integer, nullable=False, index=True)  # YYYYMMDDHHmm
+    total_value_usd = db.Column(db.Integer, nullable=False)  # Dollars (no cents)
+    
+    # Performance metrics (calculated from inception)
+    twr = db.Column(db.Float, nullable=True)  # Time-Weighted Return % (2 decimals)
+    pnl = db.Column(db.Integer, nullable=True)  # P&L in USD (no cents)
+    pnl_percent = db.Column(db.Float, nullable=True)  # P&L % (2 decimals)
 
     def to_dict(self):
         """Convert to dictionary for API response"""
+        # Convert timestamp 202512210145 to ISO string "2025-12-21T01:45:00"
+        timestamp_str = str(self.timestamp)
+        dt = datetime(
+            year=int(timestamp_str[0:4]),
+            month=int(timestamp_str[4:6]),
+            day=int(timestamp_str[6:8]),
+            hour=int(timestamp_str[8:10]),
+            minute=int(timestamp_str[10:12])
+        )
+
         return {
             'id': self.id,
-            'timestamp': self.timestamp.isoformat(),
-            'total_value_usd': self.total_value_usd,
-            'composition': self.get_composition(),
-            'created_at': self.created_at.isoformat()
+            'timestamp': dt.isoformat(),
+            'total_value_usd': float(self.total_value_usd) if self.total_value_usd else 0.0,
+            'twr': round(self.twr, 4) if self.twr is not None else None,
+            'pnl': float(self.pnl) if self.pnl is not None else None,
+            'pnl_percent': round(self.pnl_percent, 4) if self.pnl_percent is not None else None
         }
 
 
 class CashFlow(db.Model):
-    """Cash flow model (replaces cashflows.json)"""
+    """Cash flow model"""
     __tablename__ = 'cash_flows'
 
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False, index=True)
-    amount_usd = db.Column(db.Float, nullable=False)
+    timestamp = db.Column(db.Integer, nullable=False, index=True)  # YYYYMMDDHHmm
+    amount_usd = db.Column(db.Integer, nullable=False)  # Dollars (no cents)
     type = db.Column(db.String(20), nullable=False)  # 'DEPOSIT' or 'WITHDRAW'
-    description = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
         """Convert to dictionary for API response"""
+        # Convert timestamp
+        timestamp_str = str(self.timestamp)
+        dt = datetime(
+            year=int(timestamp_str[0:4]),
+            month=int(timestamp_str[4:6]),
+            day=int(timestamp_str[6:8]),
+            hour=int(timestamp_str[8:10]),
+            minute=int(timestamp_str[10:12])
+        )
+
         return {
             'id': self.id,
-            'timestamp': self.timestamp.isoformat(),
-            'amount_usd': self.amount_usd,
-            'type': self.type,
-            'description': self.description,
-            'created_at': self.created_at.isoformat()
+            'timestamp': dt.isoformat(),
+            'amount_usd': float(self.amount_usd),
+            'type': self.type
         }
 
-class AllocationSettings(db.Model):
-    """Allocation settings model (per-asset allocation)"""
-    __tablename__ = 'allocation_settings'
+
+class LastBalance(db.Model):
+    """Current portfolio balance (updated every 10 seconds)"""
+    __tablename__ = 'last_balance'
 
     id = db.Column(db.Integer, primary_key=True)
-    allocations = db.Column(db.Text, nullable=False, default='{}')  # JSON: {asset: percent}
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def get_allocations(self):
-        """Parse allocations JSON string to dict"""
-        return json.loads(self.allocations) if self.allocations else {}
-
-    def set_allocations(self, allocations_dict):
-        """Set allocations from dict"""
-        self.allocations = json.dumps(allocations_dict)
+    timestamp = db.Column(db.Integer, nullable=False, index=True)  # YYYYMMDDHHmm (consistent with other tables)
+    asset = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    balance = db.Column(db.Float, nullable=False)
+    usd_value = db.Column(db.Float, nullable=False)
+    percentage = db.Column(db.Float, nullable=False)
 
     def to_dict(self):
         """Convert to dictionary for API response"""
+        # Convert timestamp
+        timestamp_str = str(self.timestamp)
+        dt = datetime(
+            year=int(timestamp_str[0:4]),
+            month=int(timestamp_str[4:6]),
+            day=int(timestamp_str[6:8]),
+            hour=int(timestamp_str[8:10]),
+            minute=int(timestamp_str[10:12])
+        )
+
         return {
-            'id': self.id,
-            'allocations': self.get_allocations(),
-            'updated_at': self.updated_at.isoformat()
+            'asset': self.asset,
+            'balance': round(self.balance, 4),
+            'usd_value': round(self.usd_value, 4),
+            'percentage': round(self.percentage, 4),
+            'timestamp': dt.isoformat()
         }

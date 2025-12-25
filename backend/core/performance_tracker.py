@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
+
 """
 Performance Tracker - TWR (Time-Weighted Return) calculations
 Adapted to use SQLAlchemy models instead of JSON files
-PRESERVED: Original TWR calculation logic (lines 335-421 from performance_tracker.py)
+PRESERVED: Original TWR calculation logic
 """
+
 import logging
 from datetime import datetime, timedelta
 from db.models import db, Snapshot, CashFlow
 
 logger = logging.getLogger(__name__)
-
 
 class PerformanceTracker:
     """
@@ -20,45 +21,68 @@ class PerformanceTracker:
     def __init__(self, trader):
         self.trader = trader
 
-    def save_current_snapshot(self):
+    @staticmethod
+    def timestamp_to_datetime(timestamp_int):
+        """Convertit un timestamp INTEGER (YYYYMMDDHHMM) en datetime"""
+        if isinstance(timestamp_int, datetime):
+            return timestamp_int
+        timestamp_str = str(timestamp_int)
+        return datetime.strptime(timestamp_str, '%Y%m%d%H%M')
+
+    @staticmethod
+    def datetime_to_timestamp(dt):
+        """Convertit un datetime en timestamp INTEGER (YYYYMMDDHHMM)"""
+        if isinstance(dt, int):
+            return dt
+        return int(dt.strftime('%Y%m%d%H%M'))
+
+    def save_current_snapshot(self, balances=None):
         """
         Save a snapshot of the current portfolio
-        Called by auto-refresh service every 10 minutes
-        Automatically calculates and caches TWR/P&L for all periods
+        Called by auto-refresh service every 30 minutes
+        Automatically calculates and stores TWR/P&L metrics from inception
+
+        Args:
+            balances: Dict of balances from last_balance table (required)
         """
         try:
-            balances = self.trader.get_all_balances_usd(1.0)
-            total_value = sum(b['usd_value'] for b in balances.values())
-
-            if total_value == 0:
-                logger.warning("Portfolio vide, snapshot ignoré")
+            if balances is None:
+                logger.error("balances parameter is required")
                 return False
 
-            # Compose snapshot data
-            composition = {}
-            for asset, data in balances.items():
-                if data['usd_value'] > 1.0:  # Only significant positions
-                    composition[asset] = {
-                        'balance': data['balance'],
-                        'usd_value': data['usd_value'],
-                        'percentage': (data['usd_value'] / total_value * 100) if total_value > 0 else 0
-                    }
+            # Protection: avoid creating snapshots too close together (5 min minimum)
+            last_snapshot = Snapshot.query.order_by(Snapshot.timestamp.desc()).first()
+            if last_snapshot:
+                last_dt = self.timestamp_to_datetime(last_snapshot.timestamp)
+                time_since_last = (datetime.utcnow() - last_dt).total_seconds()
+                if time_since_last < 300:  # Less than 5 minutes (300 seconds)
+                    logger.debug(f"Snapshot skipped: last snapshot was {time_since_last:.0f}s ago")
+                    return False
 
-            # Create snapshot
+            total_value = sum(b['usd_value'] for b in balances.values())
+            if total_value == 0:
+                logger.warning("Portfolio vide, snapshot ignore")
+                return False
+
+            # Calculate performance metrics from inception
+            twr_metrics = self.calculate_performance_metrics(days=0)  # 0 = total
+            pnl_metrics = self.calculate_simple_pnl(days=None)  # None = total
+
+            # Create snapshot with INTEGER timestamp format YYYYMMDDHHmm
+            timestamp_int = int(datetime.utcnow().strftime('%Y%m%d%H%M'))
+
             snapshot = Snapshot(
-                timestamp=datetime.utcnow(),
-                total_value_usd=total_value
+                timestamp=timestamp_int,
+                total_value_usd=int(total_value),
+                twr=round(twr_metrics['twr'] * 100, 2) if (twr_metrics and twr_metrics['twr'] is not None) else None,
+                pnl=int(pnl_metrics['pnl_usd']) if pnl_metrics else None,
+                pnl_percent=round(pnl_metrics['pnl_percent'], 2) if pnl_metrics else None
             )
-            snapshot.set_composition(composition)
 
             db.session.add(snapshot)
             db.session.commit()
 
-            logger.info(f"📸 Snapshot saved: ${total_value:.2f}")
-
-            # Calculate and cache performance metrics for all periods
-            self._update_performance_cache()
-
+            logger.info(f"Snapshot saved: ${snapshot.total_value_usd} | TWR: {snapshot.twr:+.2f}% | P&L: ${snapshot.pnl:+d}")
             return True
 
         except Exception as e:
@@ -66,77 +90,38 @@ class PerformanceTracker:
             db.session.rollback()
             return False
 
-    def _update_performance_cache(self):
-        """
-        Calculate and cache TWR/P&L for all standard periods
-        Called automatically after each snapshot
-        """
-        from services.portfolio_cache import portfolio_cache
-
-        periods = [
-            ('7d', 7),
-            ('14d', 14),
-            ('30d', 30),
-            ('60d', 60),
-            ('90d', 90),
-            ('180d', 180),
-            ('365d', 365),
-            ('730d', 730),
-            ('total', 0)
-        ]
-
-        for period_key, days in periods:
-            try:
-                # Calculate TWR
-                twr_metrics = self.calculate_performance_metrics(days)
-                if twr_metrics and twr_metrics['twr'] is not None:
-                    # Add percentage representation
-                    twr_metrics['twr_percent'] = twr_metrics['twr'] * 100
-                    twr_metrics['twr_annualized_percent'] = twr_metrics['twr_annualized'] * 100 if twr_metrics['twr_annualized'] is not None else None
-                    # Convert dates to ISO format
-                    twr_metrics['start_date'] = twr_metrics['start_date'].isoformat()
-                    twr_metrics['end_date'] = twr_metrics['end_date'].isoformat()
-                    # Cache it
-                    portfolio_cache.set_twr(period_key, twr_metrics)
-                    logger.debug(f"✅ TWR cached for {period_key}")
-
-                # Calculate P&L
-                pnl_metrics = self.calculate_simple_pnl(days=None if days == 0 else days)
-                if pnl_metrics:
-                    # Convert dates to ISO format
-                    pnl_metrics['period_start'] = pnl_metrics['period_start'].isoformat()
-                    pnl_metrics['period_end'] = pnl_metrics['period_end'].isoformat()
-                    # Cache it
-                    portfolio_cache.set_pnl(period_key, pnl_metrics)
-                    logger.debug(f"✅ P&L cached for {period_key}")
-
-            except Exception as e:
-                logger.warning(f"Could not cache metrics for {period_key}: {e}")
-
-        logger.info("📊 Performance cache updated for all periods")
-
     def get_tracking_stats(self):
         """Get tracking statistics (days, snapshot count, etc.)"""
         try:
             snapshots = Snapshot.query.order_by(Snapshot.timestamp).all()
-
             if not snapshots:
-                return {'days': 0, 'first_snapshot': None, 'total_snapshots': 0}
+                return {
+                    'days': 0,
+                    'first_snapshot': None,
+                    'last_snapshot': None,
+                    'total_snapshots': 0
+                }
 
-            first_snapshot = snapshots[0].timestamp
-            last_snapshot = snapshots[-1].timestamp
-            days_tracking = (last_snapshot - first_snapshot).days
+            # Convertir les timestamps INTEGER en datetime
+            first_dt = self.timestamp_to_datetime(snapshots[0].timestamp)
+            last_dt = self.timestamp_to_datetime(snapshots[-1].timestamp)
+            days_tracking = (last_dt - first_dt).days
 
             return {
                 'days': days_tracking,
-                'first_snapshot': first_snapshot,
-                'last_snapshot': last_snapshot,
+                'first_snapshot': first_dt,
+                'last_snapshot': last_dt,
                 'total_snapshots': len(snapshots)
             }
 
         except Exception as e:
             logger.error(f"Error getting tracking stats: {e}")
-            return {'days': 0, 'first_snapshot': None, 'total_snapshots': 0}
+            return {
+                'days': 0,
+                'first_snapshot': None,
+                'last_snapshot': None,
+                'total_snapshots': 0
+            }
 
     def calculate_twr(self, start_date, end_date):
         """
@@ -144,33 +129,35 @@ class PerformanceTracker:
         PRESERVED: Original logic from performance_tracker.py lines 335-394
         """
         try:
+            # Convertir les dates en format INTEGER pour la comparaison
+            start_ts = self.datetime_to_timestamp(start_date)
+            end_ts = self.datetime_to_timestamp(end_date)
+
             # Get snapshots and cash flows for the period
             snapshots_query = Snapshot.query.filter(
-                Snapshot.timestamp >= start_date,
-                Snapshot.timestamp <= end_date
+                Snapshot.timestamp >= start_ts,
+                Snapshot.timestamp <= end_ts
             ).order_by(Snapshot.timestamp).all()
 
             cash_flows_query = CashFlow.query.filter(
-                CashFlow.timestamp >= start_date,
-                CashFlow.timestamp <= end_date
+                CashFlow.timestamp >= start_ts,
+                CashFlow.timestamp <= end_ts
             ).order_by(CashFlow.timestamp).all()
 
             # Convert to dict format (matching original interface)
             snapshots = [
                 {
-                    'timestamp': s.timestamp,
-                    'total_value': s.total_value_usd,
-                    'composition': s.get_composition()
+                    'timestamp': self.timestamp_to_datetime(s.timestamp),
+                    'total_value': s.total_value_usd
                 }
                 for s in snapshots_query
             ]
 
             cash_flows = [
                 {
-                    'timestamp': cf.timestamp,
+                    'timestamp': self.timestamp_to_datetime(cf.timestamp),
                     'amount': cf.amount_usd,
-                    'type': cf.type,
-                    'description': cf.description
+                    'type': cf.type
                 }
                 for cf in cash_flows_query
             ]
@@ -207,14 +194,12 @@ class PerformanceTracker:
                         'start_time': current_start['timestamp'],
                         'end_time': event_data['timestamp']
                     })
-
                     # New period
                     current_start = event_data
                     cumulative_cf = 0
 
             # Calculate TWR
             cumulative_return = 1.0
-
             for period in periods:
                 # Adjusted value after cash flow (at beginning of period)
                 adjusted_start = period['start_value'] + period['cash_flow']
@@ -237,7 +222,6 @@ class PerformanceTracker:
         """
         Calculate all performance metrics for a period
         PRESERVED: Original logic from performance_tracker.py lines 397-421
-
         Special case: days=0 means "total" (from first to last snapshot)
         """
         try:
@@ -248,11 +232,12 @@ class PerformanceTracker:
             if not first_snapshot or not last_snapshot:
                 return None
 
-            end_date = last_snapshot.timestamp
+            # Convertir les timestamps en datetime
+            end_date = self.timestamp_to_datetime(last_snapshot.timestamp)
 
             # Special case: days=0 means from the beginning
             if days == 0:
-                start_date = first_snapshot.timestamp
+                start_date = self.timestamp_to_datetime(first_snapshot.timestamp)
                 actual_days = (end_date - start_date).days
                 if actual_days == 0:
                     actual_days = 1  # Avoid division by zero
@@ -289,7 +274,6 @@ class PerformanceTracker:
     def calculate_simple_pnl(self, days=None):
         """
         Calculate simple P&L based on snapshots and cash flows
-
         Formula: P&L = (End Snapshot - Start Snapshot) - Net Deposits
 
         Args:
@@ -297,10 +281,10 @@ class PerformanceTracker:
 
         Returns:
             {
-                'pnl_usd': float,              # Total P&L in USD
-                'invested_capital': float,     # Total invested (deposits - withdrawals)
-                'current_value': float,        # Current portfolio value (from last snapshot)
-                'pnl_percent': float,          # P&L as percentage of invested capital
+                'pnl_usd': float,           # Total P&L in USD
+                'invested_capital': float,  # Total invested (deposits - withdrawals)
+                'current_value': float,     # Current portfolio value (from last snapshot)
+                'pnl_percent': float,       # P&L as percentage of invested capital
                 'period_days': int,
                 'period_start': datetime,
                 'period_end': datetime
@@ -327,38 +311,45 @@ class PerformanceTracker:
                 }
 
             current_value = last_snapshot.total_value_usd
-            end_date = last_snapshot.timestamp
+            end_date = self.timestamp_to_datetime(last_snapshot.timestamp)
 
             if days is None or days == 0:
                 # Total: from first snapshot to last snapshot
                 first_snapshot = Snapshot.query.order_by(Snapshot.timestamp.asc()).first()
-                start_date = first_snapshot.timestamp
+                start_date = self.timestamp_to_datetime(first_snapshot.timestamp)
                 initial_value = first_snapshot.total_value_usd
                 actual_days = (end_date - start_date).days
             else:
                 # Period: from X days ago to last snapshot
                 start_date = end_date - timedelta(days=days)
 
+                # Convertir en INTEGER pour la requête SQL
+                start_ts = self.datetime_to_timestamp(start_date)
+
                 # Find closest snapshot to start date
                 start_snapshot = Snapshot.query.filter(
-                    Snapshot.timestamp >= start_date
+                    Snapshot.timestamp >= start_ts
                 ).order_by(Snapshot.timestamp.asc()).first()
 
                 if start_snapshot:
                     initial_value = start_snapshot.total_value_usd
-                    start_date = start_snapshot.timestamp
+                    start_date = self.timestamp_to_datetime(start_snapshot.timestamp)
                 else:
                     # No snapshot in period, use first available
                     first_snapshot = Snapshot.query.order_by(Snapshot.timestamp.asc()).first()
                     initial_value = first_snapshot.total_value_usd if first_snapshot else 0
-                    start_date = first_snapshot.timestamp if first_snapshot else end_date
+                    start_date = self.timestamp_to_datetime(first_snapshot.timestamp) if first_snapshot else end_date
 
                 actual_days = days
 
+            # Convertir les dates en INTEGER pour les requêtes SQL
+            start_ts = self.datetime_to_timestamp(start_date)
+            end_ts = self.datetime_to_timestamp(end_date)
+
             # Get cash flows in period
             cash_flows = CashFlow.query.filter(
-                CashFlow.timestamp >= start_date,
-                CashFlow.timestamp <= end_date
+                CashFlow.timestamp >= start_ts,
+                CashFlow.timestamp <= end_ts
             ).all()
 
             # Calculate net deposits (positive) and withdrawals (negative)

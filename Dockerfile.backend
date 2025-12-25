@@ -15,11 +15,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements files
 COPY backend/requirements.txt requirements.txt
-COPY backend/requirements-prod.txt requirements-prod.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy backend code
 COPY backend/ /app/
@@ -32,12 +30,12 @@ EXPOSE 5000
 
 # Run with Gunicorn (WSGI production server)
 # - bind to 0.0.0.0:5000
-# - 4 worker processes
+# - 1 worker process (sufficient for single-user app, avoids duplicate auto-refresh)
 # - worker class: gevent (async)
 # - 120 second timeout for long-running requests
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:5000", \
-     "--workers", "4", \
+     "--workers", "1", \
      "--worker-class", "gevent", \
      "--timeout", "120", \
      "--access-logfile", "-", \

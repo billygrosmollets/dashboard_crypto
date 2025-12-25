@@ -75,15 +75,12 @@ def create_app(config_name='development'):
     # Register API blueprints
     from api.portfolio import portfolio_bp
     from api.performance import performance_bp
-    from api.rebalancing import rebalancing_bp
 
     app.register_blueprint(portfolio_bp, url_prefix='/api/portfolio')
     app.register_blueprint(performance_bp, url_prefix='/api/performance')
-    app.register_blueprint(rebalancing_bp, url_prefix='/api/rebalancing')
 
     logger.info("✅ Portfolio API registered")
     logger.info("✅ Performance API registered")
-    logger.info("✅ Rebalancing API registered")
 
     # Health check endpoint
     @app.route('/health')
@@ -113,4 +110,4 @@ if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("🚀 Starting Binance Portfolio Manager Backend")
     logger.info("=" * 60)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)

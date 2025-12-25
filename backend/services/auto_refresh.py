@@ -1,117 +1,187 @@
 #!/usr/bin/env python3
 """
 Auto-Refresh Service
-Background service that refreshes portfolio every 10 seconds
-Creates snapshots every 10 minutes (60 refreshes)
+Background service with two separate loops:
+- 30s: Update last_balance table from Binance API
+- 1h: Create snapshot from last_balance with TWR/P&L calculations
 """
 import logging
 import threading
 import time
 from datetime import datetime
 from services.session_manager import session_manager
-from utils.portfolio_utils import refresh_portfolio_from_binance
 from core.performance_tracker import PerformanceTracker
+from db.models import db, LastBalance
 
 logger = logging.getLogger(__name__)
 
 
 class AutoRefreshService:
     """
-    Background service for automatic portfolio refresh
-    Runs in a separate thread and updates the database every 60 seconds
+    Background service for automatic portfolio refresh and snapshot creation
+    Runs two separate threads:
+    - Balance update thread: Every 30 seconds
+    - Snapshot thread: Every 1 hour
     """
 
-    def __init__(self, app, interval=60, snapshot_interval=120):
+    def __init__(self, app, balance_interval=30, snapshot_interval=3600):
         """
         Initialize auto-refresh service
 
         Args:
             app: Flask application instance
-            interval: Refresh interval in seconds (default: 60)
-            snapshot_interval: Take snapshot every N refreshes (default: 120 = 2 hours)
+            balance_interval: Balance update interval in seconds (default: 30)
+            snapshot_interval: Snapshot interval in seconds (default: 3600 = 1 hour)
         """
         self.app = app
-        self.interval = interval
+        self.balance_interval = balance_interval
         self.snapshot_interval = snapshot_interval
-        self.refresh_count = 0
+        self.balance_refresh_count = 0
+        self.snapshot_count = 0
         self.running = False
-        self.thread = None
-        self.last_refresh_time = None
+        self.balance_thread = None
+        self.snapshot_thread = None
+        self.last_balance_update = None
+        self.last_snapshot_time = None
 
     def start(self):
-        """Start the auto-refresh service in a background thread"""
+        """Start the auto-refresh service with both threads"""
         if self.running:
             logger.warning("Auto-refresh service already running")
             return
 
         self.running = True
-        self.thread = threading.Thread(target=self._refresh_loop, daemon=True)
-        self.thread.start()
-        logger.info(f"✅ Auto-refresh service started (interval: {self.interval}s)")
+
+        # Start balance update thread
+        self.balance_thread = threading.Thread(target=self._balance_update_loop, daemon=True)
+        self.balance_thread.start()
+        logger.info(f"✅ Balance update thread started (interval: {self.balance_interval}s)")
+
+        # Start snapshot thread
+        self.snapshot_thread = threading.Thread(target=self._snapshot_loop, daemon=True)
+        self.snapshot_thread.start()
+        logger.info(f"✅ Snapshot thread started (interval: {self.snapshot_interval}s)")
 
     def stop(self):
         """Stop the auto-refresh service"""
         self.running = False
-        if self.thread:
-            self.thread.join(timeout=5)
+        if self.balance_thread:
+            self.balance_thread.join(timeout=5)
+        if self.snapshot_thread:
+            self.snapshot_thread.join(timeout=5)
         logger.info("🛑 Auto-refresh service stopped")
 
-    def _refresh_loop(self):
-        """Main refresh loop running in background thread"""
+    def _balance_update_loop(self):
+        """Balance update loop - runs every 10 seconds"""
         while self.running:
             try:
                 with self.app.app_context():
-                    self._refresh_portfolio()
+                    self._update_last_balance()
 
                 # Sleep for interval
-                time.sleep(self.interval)
+                time.sleep(self.balance_interval)
 
             except Exception as e:
-                logger.error(f"❌ Auto-refresh error: {e}")
-                # Continue running even on error
-                time.sleep(self.interval)
+                logger.error(f"❌ Balance update error: {e}")
+                time.sleep(self.balance_interval)
 
-    def _refresh_portfolio(self):
-        """Refresh portfolio from Binance API and update in-memory cache"""
+    def _snapshot_loop(self):
+        """Snapshot creation loop - runs every 30 minutes"""
+        while self.running:
+            try:
+                with self.app.app_context():
+                    self._create_snapshot()
+
+                # Sleep for interval
+                time.sleep(self.snapshot_interval)
+
+            except Exception as e:
+                logger.error(f"❌ Snapshot creation error: {e}")
+                time.sleep(self.snapshot_interval)
+
+    def _update_last_balance(self):
+        """Fetch balances from Binance and update last_balance table"""
         try:
             trader = session_manager.get_trader()
-            fresh_balances, total_value_usd = refresh_portfolio_from_binance(trader, 5.0)
+            balances_data = trader.get_all_balances_usd(min_value=0.0)
 
-            # Update last refresh time
-            self.last_refresh_time = datetime.utcnow()
-            self.refresh_count += 1
+            if not balances_data:
+                logger.warning("No balances received from Binance")
+                return
 
-            # Take snapshot every snapshot_interval refreshes (e.g., every 60 refreshes = 10 minutes)
-            if self.refresh_count % self.snapshot_interval == 0:
-                self._take_snapshot()
+            # Calculate total USD value for percentages
+            total_usd = sum(data['usd_value'] for data in balances_data.values())
 
-            logger.info(f"📊 Auto-refresh #{self.refresh_count}: ${total_value_usd:.2f} ({len(fresh_balances)} assets)")
+            # Update or insert each asset in last_balance table
+            timestamp_int = int(datetime.utcnow().strftime('%Y%m%d%H%M'))
 
-        except ValueError as e:
-            logger.warning(str(e))
-        except RuntimeError as e:
-            logger.error(f"Session not initialized: {e}")
+            for asset, data in balances_data.items():
+                percentage = (data['usd_value'] / total_usd * 100) if total_usd > 0 else 0
+
+                last_balance = LastBalance.query.filter_by(asset=asset).first()
+
+                if last_balance:
+                    # Update existing
+                    last_balance.balance = data['balance']
+                    last_balance.usd_value = data['usd_value']
+                    last_balance.percentage = percentage
+                    last_balance.timestamp = timestamp_int
+                else:
+                    # Insert new
+                    last_balance = LastBalance(
+                        asset=asset,
+                        balance=data['balance'],
+                        usd_value=data['usd_value'],
+                        percentage=percentage,
+                        timestamp=timestamp_int
+                    )
+                    db.session.add(last_balance)
+
+            db.session.commit()
+
+            self.last_balance_update = datetime.utcnow()
+            self.balance_refresh_count += 1
+
+            logger.info(f"📊 Balance update #{self.balance_refresh_count}: ${total_usd:.2f} ({len(balances_data)} assets)")
+
         except Exception as e:
-            logger.error(f"Error refreshing portfolio: {e}")
+            logger.error(f"Error updating last_balance: {e}")
+            db.session.rollback()
 
-    def _take_snapshot(self):
-        """
-        Take a snapshot using the PerformanceTracker
-        Matches the behavior of original app (snapshot every 2 hours)
-        """
+    def _create_snapshot(self):
+        """Read last_balance and create snapshot with TWR/P&L calculations"""
         try:
+            # Get balances from last_balance table
+            last_balances = LastBalance.query.all()
+
+            if not last_balances:
+                logger.warning("No balances in last_balance table, skipping snapshot")
+                return
+
+            # Convert to format expected by PerformanceTracker
+            balances = {
+                lb.asset: {
+                    'balance': lb.balance,
+                    'usd_value': lb.usd_value
+                }
+                for lb in last_balances
+            }
+
+            # Use PerformanceTracker to create snapshot with TWR/P&L
             trader = session_manager.get_trader()
             tracker = PerformanceTracker(trader)
 
-            success = tracker.save_current_snapshot()
+            success = tracker.save_current_snapshot(balances=balances)
 
             if success:
-                logger.info(f"📸 Snapshot saved (refresh #{self.refresh_count})")
+                self.last_snapshot_time = datetime.utcnow()
+                self.snapshot_count += 1
+                logger.info(f"📸 Snapshot #{self.snapshot_count} created from last_balance")
             else:
-                logger.warning("Snapshot creation returned False")
+                logger.debug("Snapshot creation returned False")
 
         except Exception as e:
-            logger.error(f"Error taking snapshot: {e}")
+            logger.error(f"Error creating snapshot: {e}")
 
 
 # Global auto-refresh service instance
@@ -128,10 +198,10 @@ def start_auto_refresh(app):
     global auto_refresh_service
 
     if auto_refresh_service is None:
-        interval = app.config.get('AUTO_REFRESH_INTERVAL', 60)
-        snapshot_interval = app.config.get('SNAPSHOT_INTERVAL', 120)
+        balance_interval = app.config.get('BALANCE_UPDATE_INTERVAL', 30)
+        snapshot_interval = app.config.get('SNAPSHOT_INTERVAL', 3600)
 
-        auto_refresh_service = AutoRefreshService(app, interval, snapshot_interval)
+        auto_refresh_service = AutoRefreshService(app, balance_interval, snapshot_interval)
         auto_refresh_service.start()
 
     return auto_refresh_service

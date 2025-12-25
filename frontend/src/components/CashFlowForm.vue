@@ -24,17 +24,6 @@
         />
       </div>
 
-      <div class="form-group">
-        <label for="description">Description (optionnel)</label>
-        <input
-          id="description"
-          v-model="formData.description"
-          type="text"
-          placeholder="Ex: Dépôt mensuel, Retrait partiel..."
-          maxlength="200"
-        />
-      </div>
-
       <div class="form-actions">
         <button
           type="submit"
@@ -85,9 +74,6 @@
           <div class="cashflow-amount">
             {{ cashflow.type === 'DEPOSIT' ? '+' : '-' }}${{ formatNumber(cashflow.amount_usd) }}
           </div>
-          <div v-if="cashflow.description" class="cashflow-description">
-            {{ cashflow.description }}
-          </div>
         </div>
       </div>
     </div>
@@ -107,8 +93,7 @@ const { formatNumber, formatDate } = useFormatting()
 
 const formData = ref({
   type: 'DEPOSIT',
-  amount: null,
-  description: ''
+  amount: null
 })
 
 const submitting = ref(false)
@@ -134,8 +119,7 @@ async function handleSubmit() {
   try {
     await performanceStore.addCashFlow(
       formData.value.type,
-      formData.value.amount,
-      formData.value.description
+      formData.value.amount
     )
 
     successMessage.value = `Cash flow de $${formData.value.amount} ajouté avec succès`
@@ -155,8 +139,7 @@ async function handleSubmit() {
 function resetForm() {
   formData.value = {
     type: 'DEPOSIT',
-    amount: null,
-    description: ''
+    amount: null
   }
   errorMessage.value = ''
 }
@@ -164,33 +147,34 @@ function resetForm() {
 
 <style scoped>
 .cashflow-form {
-  padding: 2rem;
+  padding: 1.5rem;
+  font-family: inherit;
 }
 
 h3 {
-  margin-bottom: 2rem;
-  color: var(--gray-800);
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  margin-bottom: 1.5rem;
+  color: #4ade80;
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 h4 {
   margin-bottom: 1.5rem;
-  color: var(--gray-800);
-  font-size: 1.25rem;
-  font-weight: 700;
+  color: #4ade80;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
-/* Glassmorphism Form */
+/* Terminal Form */
 form {
-  background: rgba(212, 175, 55, 0.05);
-  backdrop-filter: blur(15px);
-  border: 1px solid var(--glass-border);
-  padding: 2rem;
-  border-radius: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 1.5rem;
   margin-bottom: 2rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .form-group {
@@ -200,34 +184,32 @@ form {
 label {
   display: block;
   margin-bottom: 0.75rem;
-  color: var(--gold-primary);
+  color: #4ade80;
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
 select,
 input[type="number"],
 input[type="text"] {
   width: 100%;
-  padding: 12px 16px;
-  background: rgba(10, 10, 10, 0.6);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--glass-border);
-  border-radius: 10px;
-  color: var(--gray-700);
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #4ade80;
   font-size: 0.95rem;
-  font-weight: 600;
-  transition: all 0.3s ease;
+  font-weight: 500;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  border-radius: 0.5rem;
 }
 
 select:focus,
 input:focus {
   outline: none;
-  border-color: var(--gold-primary);
-  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
-  background: rgba(212, 175, 55, 0.05);
+  border-color: #4ade80;
 }
 
 .form-actions {
@@ -237,33 +219,16 @@ input:focus {
 }
 
 button {
-  padding: 14px 28px;
-  border: none;
-  border-radius: 10px;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid;
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-button::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-
-button:active::before {
-  width: 300px;
-  height: 300px;
+  transition: all 0.2s;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 0.5rem;
 }
 
 button:disabled {
@@ -272,68 +237,66 @@ button:disabled {
 }
 
 .btn-submit {
-  background: linear-gradient(135deg, var(--gold-secondary), var(--gold-primary));
-  color: var(--bg-primary);
-  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+  background: var(--bg-primary);
+  border-color: #22c55e;
+  color: #22c55e;
   flex: 1;
-  font-weight: 800;
 }
 
 .btn-submit:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--gold-primary), var(--gold-dark));
+  background: #22c55e;
+  color: var(--bg-primary);
 }
 
 .btn-reset {
-  background: rgba(117, 117, 117, 0.3);
-  border: 1px solid var(--glass-border);
-  color: var(--gray-600);
-  backdrop-filter: blur(10px);
+  background: var(--bg-primary);
+  border-color: rgba(74, 222, 128, 0.6);
+  color: rgba(74, 222, 128, 0.6);
 }
 
 .btn-reset:hover:not(:disabled) {
-  background: rgba(117, 117, 117, 0.5);
-  color: var(--gray-700);
+  background: rgba(74, 222, 128, 0.6);
+  color: var(--bg-primary);
 }
 
 .success-message,
 .error-message {
   margin-top: 1.5rem;
-  padding: 1rem 1.25rem;
-  border-radius: 10px;
+  padding: 1rem;
   font-size: 0.9rem;
-  font-weight: 600;
-  backdrop-filter: blur(10px);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 0.5rem;
 }
 
 .success-message {
-  background: rgba(76, 175, 80, 0.15);
-  color: var(--success);
-  border: 1px solid var(--success);
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+  background: var(--bg-secondary);
+  color: #22c55e;
+  border: 1px solid #22c55e;
 }
 
 .error-message {
-  background: rgba(239, 83, 80, 0.15);
-  color: var(--error);
-  border: 1px solid var(--error);
-  box-shadow: 0 4px 12px rgba(239, 83, 80, 0.2);
+  background: var(--bg-secondary);
+  color: #f87171;
+  border: 1px solid rgba(255, 0, 0, 0.3);
 }
 
-/* Glassmorphism History */
+/* Terminal History */
 .cashflow-history {
-  background: rgba(28, 28, 28, 0.5);
-  backdrop-filter: blur(15px);
-  border: 1px solid var(--glass-border);
-  padding: 2rem;
-  border-radius: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  background: var(--bg-secondary);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
 }
 
 .no-cashflows {
   text-align: center;
-  color: var(--gray-500);
+  color: rgba(74, 222, 128, 0.6);
   padding: 2rem;
-  font-weight: 600;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .cashflows-list {
@@ -344,95 +307,72 @@ button:disabled {
   overflow-y: auto;
 }
 
-/* Custom scrollbar for cashflows list */
+/* Terminal scrollbar for cashflows list */
 .cashflows-list::-webkit-scrollbar {
   width: 8px;
 }
 
 .cashflows-list::-webkit-scrollbar-track {
-  background: rgba(28, 28, 28, 0.3);
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .cashflows-list::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--gold-dark), var(--gold-primary));
-  border-radius: 4px;
+  background: rgba(74, 222, 128, 0.6);
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .cashflow-item {
   display: grid;
-  grid-template-columns: 150px 120px 1fr auto;
+  grid-template-columns: 150px 120px 1fr;
   gap: 1rem;
   align-items: center;
-  padding: 1.25rem;
-  background: rgba(10, 10, 10, 0.5);
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border: 1px solid rgba(34, 197, 94, 0.3);
   border-left: 3px solid transparent;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.cashflow-item::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.05), transparent);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.cashflow-item:hover::before {
-  opacity: 1;
+  transition: all 0.2s;
 }
 
 .cashflow-item:hover {
-  background: rgba(28, 28, 28, 0.6);
-  border-left-width: 4px;
+  background: var(--gray-100);
+  border-color: #4ade80;
 }
 
 .cashflow-item.deposit {
-  border-left-color: var(--success);
+  border-left-color: #22c55e;
 }
 
 .cashflow-item.withdraw {
-  border-left-color: var(--error);
+  border-left-color: #f87171;
 }
 
 .cashflow-date {
   font-size: 0.75rem;
-  color: var(--gray-500);
-  font-weight: 600;
+  color: rgba(74, 222, 128, 0.6);
+  font-weight: 500;
+  letter-spacing: 1px;
 }
 
 .cashflow-type {
   font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--gray-700);
+  font-weight: 500;
+  color: #4ade80;
+  text-transform: uppercase;
 }
 
 .cashflow-amount {
   font-size: 1.1rem;
-  font-weight: 800;
+  font-weight: 500;
+  letter-spacing: 1px;
 }
 
 .cashflow-item.deposit .cashflow-amount {
-  color: var(--success);
+  color: #22c55e;
 }
 
 .cashflow-item.withdraw .cashflow-amount {
-  color: var(--error);
-}
-
-.cashflow-description {
-  font-size: 0.8rem;
-  color: var(--gray-500);
-  font-style: italic;
-  grid-column: 1 / -1;
-  margin-top: -0.5rem;
-  font-weight: 500;
+  color: #f87171;
 }
 
 @media (max-width: 768px) {
@@ -440,9 +380,7 @@ button:disabled {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
-
-  .cashflow-description {
-    margin-top: 0.5rem;
-  }
 }
 </style>
+
+

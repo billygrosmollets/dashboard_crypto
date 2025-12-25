@@ -1,8 +1,0 @@
-# Production-only dependencies
-# Install with: pip install -r requirements-prod.txt
-
-# WSGI HTTP Server
-gunicorn==21.2.0
-
-# Async worker for better performance
-gevent==23.9.1

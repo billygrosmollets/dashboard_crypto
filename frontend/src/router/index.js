@@ -1,21 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import PortfolioView from '../views/PortfolioView.vue'
-import TWRAnalyticsView from '../views/TWRAnalyticsView.vue'
+import UnifiedDashboard from '../components/UnifiedDashboard.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/',
-      name: 'portfolio',
-      component: PortfolioView
-    },
-    {
-      path: '/analytics',
-      name: 'analytics',
-      component: TWRAnalyticsView
+      name: 'dashboard',
+      component: UnifiedDashboard
     }
-    // More routes will be added in later phases (Rebalancing, Converter)
   ]
 })
 
